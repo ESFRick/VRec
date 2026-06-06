@@ -1,0 +1,46 @@
+# Build output
+bin/
+obj/
+dist/
+build/
+x64/
+Debug/
+Release/
+run/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.opendb
+
+# Compiled artifacts
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.iobj
+*.ipdb
+*.tlog
+*.lastbuildstate
+*.exe
+*.dll
+*.lib
+*.exp
+*.log
+
+# Vendored libraries required for offline builds
+!third_party/openvr_sdk/bin/
+!third_party/openvr_sdk/bin/win64/
+!third_party/openvr_sdk/bin/win64/openvr_api.dll
+!third_party/openvr_sdk/lib/win64/openvr_api.lib
+!third_party/webview2_sdk/lib/win64/WebView2LoaderStatic.lib
+
+# Local workspace files
+.cache/
+.temp/
+*.bak
+*.tmp

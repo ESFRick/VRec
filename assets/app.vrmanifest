@@ -1,0 +1,22 @@
+{
+  "source": "vrec",
+  "applications": [
+    {
+      "app_key": "com.local.vrec",
+      "launch_type": "binary",
+      "binary_path_windows": "vrec.exe",
+      "action_manifest_path": "actions.json",
+      "is_dashboard_overlay": true,
+      "strings": {
+        "en_us": {
+          "name": "VRec",
+          "description": "Hand attached SteamVR recording overlay."
+        },
+        "ru_ru": {
+          "name": "VRec",
+          "description": "Оверлей SteamVR для записи видео прямо с руки."
+        }
+      }
+    }
+  ]
+}

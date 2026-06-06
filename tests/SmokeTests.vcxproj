@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{a4f4bb0b-1e18-4c44-9c8a-330f81d08023}</ProjectGuid>
+    <RootNamespace>SmokeTests</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\tests\</OutDir>
+    <IntDir>$(SolutionDir)obj\SmokeTests\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>settings_smoke</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_CONSOLE;_UNICODE;UNICODE;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\src;$(ProjectDir)..\third_party\nlohmann_json\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>winhttp.lib;bcrypt.lib;crypt32.lib;ole32.lib;shell32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="smoke_tests.cpp" />
+    <ClCompile Include="..\src\TextUtil.cpp" />
+    <ClCompile Include="..\src\Diagnostics.cpp" />
+    <ClCompile Include="..\src\ObsClient.cpp" />
+    <ClCompile Include="..\src\ObsProtocol.cpp" />
+    <ClCompile Include="..\src\SettingsStore.cpp" />
+    <ClCompile Include="..\src\WebBridgeCodec.cpp" />
+    <ClCompile Include="..\src\WinHttpWebSocket.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\AppTypes.h" />
+    <ClInclude Include="..\src\TextUtil.h" />
+    <ClInclude Include="..\src\Diagnostics.h" />
+    <ClInclude Include="..\src\ObsClient.h" />
+    <ClInclude Include="..\src\ObsProtocol.h" />
+    <ClInclude Include="..\src\OverlayVisualState.h" />
+    <ClInclude Include="..\src\SettingsStore.h" />
+    <ClInclude Include="..\src\WebBridgeCodec.h" />
+    <ClInclude Include="..\src\WinHttpWebSocket.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="disc" cx="0.5" cy="0.40" r="0.72">
+      <stop offset="0" stop-color="#26221e"/>
+      <stop offset="1" stop-color="#141210"/>
+    </radialGradient>
+    <linearGradient id="copper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8a05e"/>
+      <stop offset="1" stop-color="#bd6f33"/>
+    </linearGradient>
+  </defs>
+
+  <!-- dark charcoal disc with a warm rim so the edge reads on a dark taskbar -->
+  <circle cx="512" cy="512" r="470" fill="url(#disc)" stroke="#443c33" stroke-width="8"/>
+
+  <!-- big copper V — fills the tile so it survives at 16px -->
+  <path d="M252 340 L512 752 L772 340" fill="none" stroke="url(#copper)"
+        stroke-width="158" stroke-linejoin="round" stroke-linecap="butt"/>
+
+  <!-- record dot nested in the V's mouth -->
+  <circle cx="512" cy="432" r="86" fill="#ef4a3f"/>
+</svg>

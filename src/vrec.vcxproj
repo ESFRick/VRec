@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{8e8384f8-046a-4d8e-8e76-4b9614d08b4b}</ProjectGuid>
+    <RootNamespace>VRec</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>vrec</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_UNICODE;UNICODE;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\third_party\openvr_sdk\headers;$(ProjectDir)..\third_party\webview2_sdk\include;$(ProjectDir)..\third_party\nlohmann_json\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\openvr_sdk\lib\win64;$(ProjectDir)..\third_party\webview2_sdk\lib\win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>openvr_api.lib;WebView2LoaderStatic.lib;version.lib;dwmapi.lib;winhttp.lib;bcrypt.lib;crypt32.lib;ole32.lib;comdlg32.lib;comctl32.lib;shlwapi.lib;shell32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_UNICODE;UNICODE;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\third_party\openvr_sdk\headers;$(ProjectDir)..\third_party\webview2_sdk\include;$(ProjectDir)..\third_party\nlohmann_json\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\openvr_sdk\lib\win64;$(ProjectDir)..\third_party\webview2_sdk\lib\win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>openvr_api.lib;WebView2LoaderStatic.lib;version.lib;dwmapi.lib;winhttp.lib;bcrypt.lib;crypt32.lib;ole32.lib;comdlg32.lib;comctl32.lib;shlwapi.lib;shell32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="AppHost.h" />
+    <ClInclude Include="AppTypes.h" />
+    <ClInclude Include="AppVersion.h" />
+    <ClInclude Include="WebView2Ui.h" />
+    <ClInclude Include="Diagnostics.h" />
+    <ClInclude Include="Localization.h" />
+    <ClInclude Include="ObsClient.h" />
+    <ClInclude Include="ObsProtocol.h" />
+    <ClInclude Include="OverlayRenderer.h" />
+    <ClInclude Include="OverlayVisualState.h" />
+    <ClInclude Include="SettingsStore.h" />
+    <ClInclude Include="TextUtil.h" />
+    <ClInclude Include="VrOverlay.h" />
+    <ClInclude Include="WinHttpWebSocket.h" />
+    <ClInclude Include="WebBridgeCodec.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="AppHost.cpp" />
+    <ClCompile Include="WebView2Ui.cpp" />
+    <ClCompile Include="Diagnostics.cpp" />
+    <ClCompile Include="ObsClient.cpp" />
+    <ClCompile Include="ObsProtocol.cpp" />
+    <ClCompile Include="OverlayRenderer.cpp" />
+    <ClCompile Include="SettingsStore.cpp" />
+    <ClCompile Include="TextUtil.cpp" />
+    <ClCompile Include="VrOverlay.cpp" />
+    <ClCompile Include="WinHttpWebSocket.cpp" />
+    <ClCompile Include="WebBridgeCodec.cpp" />
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="app.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <RuntimeAsset Include="..\assets\app.vrmanifest" />
+    <RuntimeAsset Include="..\assets\actions.json" />
+    <RuntimeAsset Include="..\assets\bindings_oculus_touch.json" />
+    <RuntimeAsset Include="..\assets\bindings_knuckles.json" />
+    <RuntimeAsset Include="..\assets\bindings_vive_controller.json" />
+    <RuntimeAsset Include="..\assets\bindings_vive_cosmos_controller.json" />
+    <RuntimeAsset Include="..\assets\bindings_hpmotioncontroller.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <WebAsset Include="$(ProjectDir)..\web\**\*.*" />
+  </ItemGroup>
+  <Target Name="CopyRuntimeFiles" AfterTargets="Build">
+    <Copy SourceFiles="$(ProjectDir)..\third_party\openvr_sdk\bin\win64\openvr_api.dll" DestinationFolder="$(OutDir)" />
+    <Copy SourceFiles="@(RuntimeAsset)" DestinationFolder="$(OutDir)" />
+    <Copy SourceFiles="@(WebAsset)" DestinationFolder="$(OutDir)web\%(RecursiveDir)" />
+  </Target>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VRec</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="desktop">
+  <div class="window" id="window" role="application" aria-label="VRec">
+    <header class="titlebar">
+      <div class="title">
+        <span class="title__name">VRec</span>
+      </div>
+
+      <div class="title__rec" id="titleRec" hidden aria-live="polite">
+        <span class="title__recdot" aria-hidden="true"></span>
+        <span class="title__rectxt" data-i18n="status.recording">Recording</span>
+        <span class="title__rectime mono" id="titleRecTime">00:00</span>
+      </div>
+
+      <div class="caption">
+        <button class="cap" id="winMin" type="button" aria-label="Minimize" title="Minimize" data-i18n-aria-label="a11y.minimize" data-i18n-title="a11y.minimize">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg>
+        </button>
+        <button class="cap cap--close" id="winClose" type="button" aria-label="Close" title="Close" data-i18n-aria-label="a11y.close" data-i18n-title="a11y.close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="body">
+      <nav class="sidebar" aria-label="Sections" data-i18n-aria-label="a11y.sections">
+        <ul class="nav" role="tablist">
+          <li>
+            <button class="nav__item is-active" role="tab" aria-selected="true" aria-controls="page-obs" tabindex="0" data-page="obs" id="nav-obs">
+              <span class="nav__bar" aria-hidden="true"></span>
+              <span class="nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 0 1 7 7M12 9a3 3 0 0 1 3 3"/><circle cx="12" cy="15" r="1.6"/></svg>
+              </span>
+              <span class="nav__label" data-i18n="nav.obs">OBS</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav__item" role="tab" aria-selected="false" aria-controls="page-overlay" tabindex="-1" data-page="overlay" id="nav-overlay">
+              <span class="nav__bar" aria-hidden="true"></span>
+              <span class="nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><rect x="4.5" y="6.5" width="15" height="9" rx="1.5"/><path d="M9 18.5h6"/></svg>
+              </span>
+              <span class="nav__label" data-i18n="nav.overlay">Overlay</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav__item" role="tab" aria-selected="false" aria-controls="page-advanced" tabindex="-1" data-page="advanced" id="nav-advanced">
+              <span class="nav__bar" aria-hidden="true"></span>
+              <span class="nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M5 8h7M16 8h3M5 16h3M12 16h7"/><circle cx="14" cy="8" r="1.8"/><circle cx="10" cy="16" r="1.8"/></svg>
+              </span>
+              <span class="nav__label" data-i18n="nav.advanced">Advanced</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav__item" role="tab" aria-selected="false" aria-controls="page-diagnostics" tabindex="-1" data-page="diagnostics" id="nav-diagnostics">
+              <span class="nav__bar" aria-hidden="true"></span>
+              <span class="nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 13h3.5l2-6 3 12 2.2-9 1.6 3H20"/></svg>
+              </span>
+              <span class="nav__label" data-i18n="nav.diagnostics">Diagnostics</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="content" id="content">
+        <section class="page is-active" id="page-obs" data-page="obs" role="tabpanel" aria-labelledby="nav-obs" tabindex="-1">
+          <div class="page__head">
+            <h1 class="page__title" data-i18n="nav.obs">OBS</h1>
+            <p class="page__desc" data-i18n="obs.pageDesc">Controls OBS recording over obs-websocket v5.</p>
+            <button class="page__help" id="obsHelp" type="button">
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+              <span data-i18n="obs.setupGuide">Setup guide</span>
+            </button>
+          </div>
+
+          <div class="section">
+            <div class="section__title">
+              <span data-i18n="obs.sectionConn">Connection</span>
+              <span class="status" id="obsStatus" data-state="disconnected">
+                <span class="status__dot" aria-hidden="true"></span>
+                <span class="status__txt" data-i18n="obs.state.disconnected">Disconnected</span>
+              </span>
+            </div>
+            <div class="group">
+              <div class="row">
+                <div class="row__main"><label class="row__label" for="obsHost" data-i18n="obs.host">Host</label></div>
+                <div class="row__control">
+                  <input class="input input--md mono" id="obsHost" type="text" value="127.0.0.1" autocomplete="off" spellcheck="false" aria-describedby="obsHostErr">
+                  <p class="field__err" id="obsHostErr" hidden data-i18n="obs.err.host">Host can't be empty.</p>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row__main"><label class="row__label" for="obsPort" data-i18n="obs.port">Port</label></div>
+                <div class="row__control">
+                  <input class="input input--sm mono" id="obsPort" type="number" value="4455" min="1" max="65535" inputmode="numeric" aria-describedby="obsPortErr">
+                  <p class="field__err" id="obsPortErr" hidden data-i18n="obs.err.port">Port must be between 1 and 65535.</p>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row__main"><label class="row__label" for="obsPass" data-i18n="obs.password">Password</label></div>
+                <div class="row__control">
+                  <div class="input-wrap input--md">
+                    <input class="input mono" id="obsPass" type="password" value="" autocomplete="off" spellcheck="false">
+                    <button class="reveal" id="obsPassToggle" type="button" aria-label="Show password" aria-pressed="false" data-i18n-aria-label="a11y.showPassword">
+                      <svg class="ic ic-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                      <svg class="ic ic-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l16 16M9.5 9.6A2.6 2.6 0 0 0 12 14.6M6.3 6.5C3.7 8 2 12 2 12s3.6 6 10 6c1.7 0 3.2-.4 4.5-1M17.5 16.4C20.2 14.9 22 12 22 12s-3.6-6-10-6c-.6 0-1.2 0-1.7.1"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="group">
+              <div class="row row--btn">
+                <div class="row__main"><span class="result" id="obsResult" role="status" aria-live="polite"></span></div>
+                <div class="row__control">
+                  <button class="btn" id="obsTest" type="button" data-i18n="obs.test">Test connection</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="page-overlay" data-page="overlay" role="tabpanel" aria-labelledby="nav-overlay" tabindex="-1" hidden>
+          <div class="page__head">
+            <h1 class="page__title" data-i18n="nav.overlay">Overlay</h1>
+            <p class="page__desc" data-i18n="overlay.pageDesc">Control where the VR hand panel appears.</p>
+          </div>
+
+          <div class="section">
+            <div class="section__title"><span data-i18n="overlay.sectionPlacement">Placement</span></div>
+            <div class="group">
+              <div class="row">
+                <div class="row__main"><span class="row__label" id="ovHandLbl" data-i18n="overlay.hand">Overlay hand</span></div>
+                <div class="row__control">
+                  <div class="seg" role="radiogroup" aria-labelledby="ovHandLbl" id="ovHand">
+                    <button class="seg__btn" role="radio" aria-checked="false" data-val="left" data-i18n="overlay.left">Left</button>
+                    <button class="seg__btn is-on" role="radio" aria-checked="true" data-val="right" data-i18n="overlay.right">Right</button>
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row__main">
+                  <label class="row__label" for="ovPlace" data-i18n="overlay.placement">Placement preset</label>
+                  <p class="row__desc" data-i18n="overlay.placementDesc">Base position of the panel relative to the controller.</p>
+                </div>
+                <div class="row__control row__control--help">
+                  <div class="select-wrap input--md">
+                    <select class="select" id="ovPlace">
+                      <option value="underController" data-i18n="overlay.underController">Under controller</option>
+                      <option value="wristOutside" data-i18n="overlay.wristOutside">Wrist outside</option>
+                    </select>
+                    <svg class="select__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+                  </div>
+                  <button class="help" type="button" data-help="overlay.placement" aria-label="Help" aria-expanded="false" data-i18n-aria-label="a11y.help">?</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="page-advanced" data-page="advanced" role="tabpanel" aria-labelledby="nav-advanced" tabindex="-1" hidden>
+          <div class="page__head">
+            <h1 class="page__title" data-i18n="nav.advanced">Advanced</h1>
+            <p class="page__desc" data-i18n="advanced.pageDesc">Interface, diagnostics, and reset options.</p>
+          </div>
+
+          <div class="section">
+            <div class="section__title"><span data-i18n="advanced.sectionInterface">Interface</span></div>
+            <div class="group">
+              <div class="row">
+                <div class="row__main"><span class="row__label" id="advLangLbl" data-i18n="advanced.language">Language</span></div>
+                <div class="row__control">
+                  <div class="seg" role="radiogroup" aria-labelledby="advLangLbl" id="advLang">
+                    <button class="seg__btn is-on" role="radio" aria-checked="true" data-val="en" data-i18n="advanced.english">English</button>
+                    <button class="seg__btn" role="radio" aria-checked="false" data-val="ru" data-i18n="advanced.russian">Russian</button>
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row__main"><span class="row__label" id="advThemeLbl" data-i18n="advanced.theme">Theme</span></div>
+                <div class="row__control">
+                  <div class="seg" role="radiogroup" aria-labelledby="advThemeLbl" id="advTheme">
+                    <button class="seg__btn is-on" role="radio" aria-checked="true" data-val="dark" data-i18n="advanced.dark">Dark</button>
+                    <button class="seg__btn" role="radio" aria-checked="false" data-val="light" data-i18n="advanced.light">Light</button>
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <div class="row__main">
+                  <label class="row__label" for="advLog" data-i18n="advanced.logLevel">Log level</label>
+                  <p class="row__desc" data-i18n="advanced.logLevelDesc">Use debug only when reporting a problem.</p>
+                </div>
+                <div class="row__control row__control--help">
+                  <div class="select-wrap input--sm">
+                    <select class="select" id="advLog">
+                      <option value="info" data-i18n="advanced.info">Info</option>
+                      <option value="debug" data-i18n="advanced.debug">Debug</option>
+                    </select>
+                    <svg class="select__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+                  </div>
+                  <button class="help" type="button" data-help="advanced.logLevel" aria-label="Help" aria-expanded="false" data-i18n-aria-label="a11y.help">?</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section__title"><span data-i18n="advanced.sectionReset">Reset</span></div>
+            <div class="group">
+              <div class="row">
+                <div class="row__main">
+                  <span class="row__label" data-i18n="advanced.resetTitle">Reset all settings</span>
+                  <p class="row__desc" data-i18n="advanced.resetDesc">Restore every setting to its default value.</p>
+                  <span class="result" id="resetResult" role="status" aria-live="polite"></span>
+                </div>
+                <div class="row__control">
+                  <button class="btn btn--danger" id="advReset" type="button" data-i18n="advanced.resetBtn">Reset</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="page-diagnostics" data-page="diagnostics" role="tabpanel" aria-labelledby="nav-diagnostics" tabindex="-1" hidden>
+          <div class="page__head">
+            <h1 class="page__title" data-i18n="nav.diagnostics">Diagnostics</h1>
+            <p class="page__desc" data-i18n="diag.pageDesc">Technical events and support information.</p>
+          </div>
+
+          <div class="section">
+            <div class="section__title"><span data-i18n="diag.sectionAbout">About</span></div>
+            <div class="group">
+              <div class="row row--tight">
+                <div class="row__main"><span class="row__label" data-i18n="diag.appVersion">App version</span></div>
+                <div class="row__control"><span class="meta-val mono" id="diagVer">—</span></div>
+              </div>
+              <div class="row row--tight">
+                <div class="row__main"><span class="row__label" data-i18n="diag.buildType">Build type</span></div>
+                <div class="row__control"><span class="meta-val mono" id="diagBuild">—</span></div>
+              </div>
+              <div class="row row--btn">
+                <div class="row__main">
+                  <span class="row__label" data-i18n="diag.supportTitle">Support report</span>
+                  <p class="row__desc" data-i18n="diag.supportText">Attach this when you report a bug on GitHub.</p>
+                  <span class="result" id="diagResult" role="status" aria-live="polite"></span>
+                </div>
+                <div class="row__control">
+                  <button class="btn" id="diagExport" type="button" data-i18n="diag.export">Export report</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section__title">
+              <span data-i18n="diag.sectionLog">Log</span>
+            </div>
+            <div class="console" id="console" tabindex="0" role="log" aria-label="Diagnostic log" data-i18n-aria-label="a11y.diagnosticLog">
+              <div class="console__empty" id="consoleEmpty" data-i18n="diag.logEmpty">No log entries yet.</div>
+              <div class="console__lines" id="consoleLines"></div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <div class="popover" id="popover" role="tooltip" hidden>
+      <div class="popover__arrow" aria-hidden="true"></div>
+      <p class="popover__body" id="popoverBody"></p>
+    </div>
+
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
