@@ -37,7 +37,7 @@ constexpr int kOverlayWidth = OverlayRenderer::Width;
 constexpr int kOverlayHeight = OverlayRenderer::Height;
 constexpr int kCursorOverlaySize = 64;
 constexpr float kCursorOverlayWidthMeters = 0.014f;
-constexpr float kCursorLiftMeters = 0.008f;
+constexpr float kCursorLiftMeters = 0.001f;
 constexpr bool kDebugOverlayCheckerDefault = false;
 constexpr double kPi = 3.14159265358979323846;
 constexpr int kHideByAngleHysteresisDegrees = 5;
@@ -208,15 +208,15 @@ std::vector<uint8_t> BuildCursorRgba()
             const float distance = std::sqrt(dx * dx + dy * dy);
             const size_t index = (static_cast<size_t>(y) * kCursorOverlaySize + x) * 4;
             if (distance <= radius) {
-                output[index + 0] = 25;
-                output[index + 1] = 216;
-                output[index + 2] = 236;
+                output[index + 0] = 214;
+                output[index + 1] = 143;
+                output[index + 2] = 87;
                 output[index + 3] = 235;
             } else if (distance <= ringRadius) {
-                output[index + 0] = 238;
-                output[index + 1] = 252;
-                output[index + 2] = 255;
-                output[index + 3] = 190;
+                output[index + 0] = 74;
+                output[index + 1] = 57;
+                output[index + 2] = 43;
+                output[index + 3] = 180;
             }
         }
     }
