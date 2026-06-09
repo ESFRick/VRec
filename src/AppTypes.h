@@ -20,6 +20,17 @@ enum class OverlayPanelPage {
     Settings
 };
 
+enum class OverlayHotspot {
+    None,
+    RecordButton,
+    SettingsButton,
+    SettingsBack,
+    HideAngleMinus,
+    HideAnglePlus,
+    HideAngleSlider,
+    HideAngleReset
+};
+
 enum class RecorderState {
     Idle,
     Recording

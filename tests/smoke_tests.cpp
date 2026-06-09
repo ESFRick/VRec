@@ -287,6 +287,21 @@ void TestObsCancellation()
 
 void TestOverlayVisualState()
 {
+    auto visual = [](
+        const StatusSnapshot& status,
+        const Settings& settings,
+        OverlayPanelPage page,
+        OverlayHotspot hover = OverlayHotspot::None,
+        OverlayHotspot pressed = OverlayHotspot::None) {
+        return MakeOverlayVisualState(
+            status,
+            settings,
+            page,
+            hover,
+            pressed,
+            false);
+    };
+
     StatusSnapshot status;
     status.obsConnState = ObsConnState::Disconnected;
     status.recorderState = RecorderState::Idle;
@@ -296,22 +311,24 @@ void TestOverlayVisualState()
     Settings settings;
     settings.language = Language::English;
 
-    const OverlayVisualState offline =
-        MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false);
+    const OverlayVisualState offline = visual(
+        status,
+        settings,
+        OverlayPanelPage::Recording);
 
     status.recordingTime = std::chrono::seconds(2);
     Check(
         !OverlayNeedsRender(
             offline,
-            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
+            visual(status, settings, OverlayPanelPage::Recording),
             false),
-        L"overlay ignores recording time changes");
+        L"overlay ignores idle recording time changes");
 
     status.obsConnState = ObsConnState::Connected;
     Check(
         OverlayNeedsRender(
             offline,
-            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
+            visual(status, settings, OverlayPanelPage::Recording),
             false),
         L"overlay detects OBS connection changes");
 
@@ -320,58 +337,125 @@ void TestOverlayVisualState()
     Check(
         !OverlayNeedsRender(
             offline,
-            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
+            visual(status, settings, OverlayPanelPage::Recording),
             false),
         L"overlay ignores offline OBS error text changes");
 
     status.lastError = L"OBS unavailable";
     status.recorderState = RecorderState::Recording;
-    const OverlayVisualState recording =
-        MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false);
+    const OverlayVisualState recording = visual(
+        status,
+        settings,
+        OverlayPanelPage::Recording);
     Check(
         OverlayNeedsRender(offline, recording, false),
         L"overlay detects recording start");
+
+    status.recordingTime = std::chrono::seconds(3);
+    Check(
+        OverlayNeedsRender(
+            recording,
+            visual(status, settings, OverlayPanelPage::Recording),
+            false),
+        L"overlay detects recording timer changes");
+
+    Check(
+        OverlayNeedsRender(
+            recording,
+            visual(
+                status,
+                settings,
+                OverlayPanelPage::Recording,
+                OverlayHotspot::RecordButton),
+            false),
+        L"overlay detects hover changes");
+
+    Check(
+        OverlayNeedsRender(
+            recording,
+            visual(
+                status,
+                settings,
+                OverlayPanelPage::Recording,
+                OverlayHotspot::RecordButton,
+                OverlayHotspot::RecordButton),
+            false),
+        L"overlay detects pressed changes");
 
     status.recorderState = RecorderState::Idle;
     Check(
         OverlayNeedsRender(
             recording,
-            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
+            visual(status, settings, OverlayPanelPage::Recording),
             false),
         L"overlay detects recording stop");
 
     Check(
         OverlayNeedsRender(
             offline,
-            MakeOverlayVisualState(status, settings, OverlayPanelPage::Settings, false),
+            visual(status, settings, OverlayPanelPage::Settings),
             false),
         L"overlay detects settings page changes");
     settings.overlay.hideAngleDegrees = 95;
     Check(
         OverlayNeedsRender(
             offline,
-            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
+            visual(status, settings, OverlayPanelPage::Recording),
             false),
         L"overlay detects hide angle changes");
     settings.overlay.hideAngleDegrees = kOverlayHideAngleDefaultDegrees;
 
     OverlayRefreshState refresh;
     const auto now = std::chrono::steady_clock::now();
-    refresh.SetDesired(offline);
+    refresh.SetDesired(offline, now);
     Check(refresh.ShouldSubmit(now), L"new overlay state is submitted");
     refresh.MarkSubmitted(offline, now);
     Check(!refresh.ShouldSubmit(now), L"overlay waits for image load");
 
-    refresh.SetDesired(recording);
+    OverlayRefreshState textureRefresh;
+    textureRefresh.SetDesired(offline, now);
+    Check(textureRefresh.ShouldSubmit(now), L"D3D texture state is submitted");
+    textureRefresh.MarkDisplayed(offline, now);
+    Check(!textureRefresh.ShouldSubmit(now), L"D3D texture state is displayed immediately");
+
+    refresh.SetDesired(recording, now);
     Check(!refresh.ShouldSubmit(now), L"new state waits behind in-flight image");
     refresh.MarkImageLoaded();
-    Check(refresh.ShouldSubmit(now), L"newer state submits after image load");
-
-    refresh.MarkSubmitted(recording, now);
-    refresh.MarkImageFailed(now);
-    Check(!refresh.ShouldSubmit(now), L"failed overlay image uses retry delay");
+    Check(!refresh.ShouldSubmit(now), L"newer state observes frame pacing");
     Check(
-        refresh.ShouldSubmit(now + std::chrono::milliseconds(300)),
+        refresh.ShouldSubmit(now + OverlayRefreshState::MinSubmitInterval),
+        L"newer state submits after frame pacing delay");
+
+    refresh.MarkSubmitted(recording, now + OverlayRefreshState::MinSubmitInterval);
+    refresh.MarkImageLoaded();
+    status.recorderState = RecorderState::Recording;
+    status.recordingTime = recording.recordingTime;
+    settings.overlay.hideAngleDegrees = 95;
+    const OverlayVisualState adjustedAngle = visual(
+        status,
+        settings,
+        OverlayPanelPage::Recording);
+    const auto angleChangedAt = now + OverlayRefreshState::MinSubmitInterval;
+    refresh.SetDesired(adjustedAngle, angleChangedAt);
+    Check(
+        !refresh.ShouldSubmit(angleChangedAt + OverlayRefreshState::MinSubmitInterval),
+        L"dynamic overlay update waits for stable value");
+    Check(
+        refresh.ShouldSubmit(
+            angleChangedAt +
+            OverlayRefreshState::MinSubmitInterval +
+            OverlayRefreshState::DynamicUpdateDelay),
+        L"dynamic overlay update submits after stable delay");
+
+    const auto failedAt =
+        angleChangedAt +
+        OverlayRefreshState::MinSubmitInterval +
+        OverlayRefreshState::DynamicUpdateDelay;
+    refresh.MarkSubmitted(adjustedAngle, failedAt);
+    refresh.MarkImageFailed(failedAt);
+    Check(!refresh.ShouldSubmit(failedAt), L"failed overlay image uses retry delay");
+    Check(
+        refresh.ShouldSubmit(failedAt + OverlayRefreshState::RetryDelay),
         L"failed overlay image retries after delay");
 }
 

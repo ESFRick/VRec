@@ -50,7 +50,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\openvr_sdk\lib\win64;$(ProjectDir)..\third_party\webview2_sdk\lib\win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>openvr_api.lib;WebView2LoaderStatic.lib;version.lib;dwmapi.lib;winhttp.lib;bcrypt.lib;crypt32.lib;ole32.lib;comdlg32.lib;comctl32.lib;shlwapi.lib;shell32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>openvr_api.lib;WebView2LoaderStatic.lib;version.lib;d3d11.lib;dxgi.lib;dwmapi.lib;winhttp.lib;bcrypt.lib;crypt32.lib;ole32.lib;comdlg32.lib;comctl32.lib;shlwapi.lib;shell32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -70,7 +70,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\openvr_sdk\lib\win64;$(ProjectDir)..\third_party\webview2_sdk\lib\win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>openvr_api.lib;WebView2LoaderStatic.lib;version.lib;dwmapi.lib;winhttp.lib;bcrypt.lib;crypt32.lib;ole32.lib;comdlg32.lib;comctl32.lib;shlwapi.lib;shell32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>openvr_api.lib;WebView2LoaderStatic.lib;version.lib;d3d11.lib;dxgi.lib;dwmapi.lib;winhttp.lib;bcrypt.lib;crypt32.lib;ole32.lib;comdlg32.lib;comctl32.lib;shlwapi.lib;shell32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

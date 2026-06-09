@@ -118,6 +118,43 @@ bool PtInRectPixels(const RECT& rect, float x, float y)
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
 
+
+OverlayHotspot HitTestOverlayHotspot(
+    OverlayPanelPage page,
+    float x,
+    float y,
+    const StatusSnapshot& status)
+{
+    if (page == OverlayPanelPage::Settings) {
+        if (PtInRectPixels(SettingsBackButtonRect(), x, y)) {
+            return OverlayHotspot::SettingsBack;
+        }
+        if (PtInRectPixels(HideAngleResetRect(), x, y)) {
+            return OverlayHotspot::HideAngleReset;
+        }
+        if (PtInRectPixels(HideAngleMinusRect(), x, y)) {
+            return OverlayHotspot::HideAngleMinus;
+        }
+        if (PtInRectPixels(HideAnglePlusRect(), x, y)) {
+            return OverlayHotspot::HideAnglePlus;
+        }
+        if (PtInRectPixels(HideAngleSliderRect(), x, y)) {
+            return OverlayHotspot::HideAngleSlider;
+        }
+        return OverlayHotspot::None;
+    }
+
+    if (PtInRectPixels(SettingsButtonRect(), x, y)) {
+        return OverlayHotspot::SettingsButton;
+    }
+    if (PtInRectPixels(RecButtonRect(), x, y) &&
+        (status.recorderState == RecorderState::Recording ||
+         status.obsConnState == ObsConnState::Connected)) {
+        return OverlayHotspot::RecordButton;
+    }
+    return OverlayHotspot::None;
+}
+
 int HideAngleFromSliderX(float x)
 {
     const RECT slider = HideAngleSliderRect();
@@ -873,10 +910,6 @@ void VrOverlay::UpdateSettings(const Settings& settings)
     const bool pointerSettingsChanged =
         settings_.overlay.hand != settings.overlay.hand ||
         settings_.overlay.placement != settings.overlay.placement;
-    const bool visualSettingsChanged =
-        settings_.language != settings.language ||
-        settings_.overlay.hideAngleDegrees != settings.overlay.hideAngleDegrees;
-
     settings_ = settings;
     if (pointerSettingsChanged) {
         attachDirty_ = true;
@@ -886,9 +919,6 @@ void VrOverlay::UpdateSettings(const Settings& settings)
         steamVrStrictRayLogged_ = false;
         legacyStrictRayLogged_ = false;
         cursorTransformFailureLogged_ = false;
-    }
-    if (visualSettingsChanged) {
-        refreshState_.Reset();
     }
 }
 
@@ -1130,21 +1160,27 @@ void VrOverlay::Tick()
     const StatusSnapshot status = statusProvider_ ? statusProvider_() : StatusSnapshot{};
     const Settings settings = SettingsSnapshot();
     OverlayPanelPage panelPage = OverlayPanelPage::Recording;
+    OverlayHotspot hoverHotspot = OverlayHotspot::None;
+    OverlayHotspot pressedHotspot = OverlayHotspot::None;
     {
         std::scoped_lock lock(mutex_);
         panelPage = overlayPage_;
+        hoverHotspot = hoverHotspot_;
+        pressedHotspot = pressedHotspot_;
     }
     const OverlayVisualState visualState = MakeOverlayVisualState(
         status,
         settings,
         panelPage,
+        hoverHotspot,
+        pressedHotspot,
         DebugOverlayCheckerEnabled());
     bool shouldRender = false;
+    const auto now = std::chrono::steady_clock::now();
     {
         std::scoped_lock lock(mutex_);
-        refreshState_.SetDesired(visualState);
-        shouldRender = refreshState_.ShouldSubmit(
-            std::chrono::steady_clock::now());
+        refreshState_.SetDesired(visualState, now);
+        shouldRender = refreshState_.ShouldSubmit(now);
     }
     if (shouldRender) {
         RenderOverlay(status);
@@ -1617,10 +1653,25 @@ void VrOverlay::UpdateControllerInteraction()
             std::scoped_lock lock(mutex_);
             cursorVisible_ = false;
             cursorPressed_ = false;
+            hoverHotspot_ = OverlayHotspot::None;
+            pressedHotspot_ = OverlayHotspot::None;
         }
         HideCursorOverlay();
         return;
     }
+
+    OverlayPanelPage currentPage = OverlayPanelPage::Recording;
+    {
+        std::scoped_lock lock(mutex_);
+        currentPage = overlayPage_;
+    }
+    const StatusSnapshot currentStatus =
+        statusProvider_ ? statusProvider_() : StatusSnapshot{};
+    const OverlayHotspot hoverHotspot = HitTestOverlayHotspot(
+        currentPage,
+        best.x,
+        best.yTopLeft,
+        currentStatus);
 
     {
         std::scoped_lock lock(mutex_);
@@ -1628,6 +1679,8 @@ void VrOverlay::UpdateControllerInteraction()
         cursorPressed_ = best.clickDown;
         cursorX_ = best.x;
         cursorY_ = best.yTopLeft;
+        hoverHotspot_ = hoverHotspot;
+        pressedHotspot_ = best.clickDown ? hoverHotspot : OverlayHotspot::None;
     }
 
     if (IsValidOverlayHandle(cursorOverlayHandle_)) {
@@ -1662,6 +1715,8 @@ void VrOverlay::UpdateControllerInteraction()
                 std::scoped_lock lock(mutex_);
                 cursorVisible_ = false;
                 cursorPressed_ = false;
+                hoverHotspot_ = OverlayHotspot::None;
+                pressedHotspot_ = OverlayHotspot::None;
             }
             HideCursorOverlay();
             return;
@@ -1764,6 +1819,14 @@ bool VrOverlay::HandleOverlayClick(float x, float y, bool, uint64_t, uint32_t)
 
 void VrOverlay::HideCursorOverlay()
 {
+    {
+        std::scoped_lock lock(mutex_);
+        cursorVisible_ = false;
+        cursorPressed_ = false;
+        hoverHotspot_ = OverlayHotspot::None;
+        pressedHotspot_ = OverlayHotspot::None;
+    }
+
     if (!vr::VROverlay() || !IsValidOverlayHandle(cursorOverlayHandle_) || !cursorOverlayVisible_) {
         return;
     }
@@ -1794,30 +1857,48 @@ void VrOverlay::RenderOverlay(const StatusSnapshot& status)
     const Settings settings = SettingsSnapshot();
     const bool debugChecker = DebugOverlayCheckerEnabled();
     OverlayPanelPage panelPage = OverlayPanelPage::Recording;
+    OverlayHotspot hoverHotspot = OverlayHotspot::None;
+    OverlayHotspot pressedHotspot = OverlayHotspot::None;
     {
         std::scoped_lock lock(mutex_);
         panelPage = overlayPage_;
+        hoverHotspot = hoverHotspot_;
+        pressedHotspot = pressedHotspot_;
     }
     const OverlayVisualState visualState = MakeOverlayVisualState(
         status,
         settings,
         panelPage,
+        hoverHotspot,
+        pressedHotspot,
         debugChecker);
-    if (renderer_.Render(
-            overlayHandle_,
-            status,
-            settings,
-            panelPage,
-            debugChecker,
-            diagnostics_)) {
+    const OverlayRenderResult renderResult = renderer_.Render(
+        overlayHandle_,
+        status,
+        settings,
+        panelPage,
+        hoverHotspot,
+        pressedHotspot,
+        debugChecker,
+        diagnostics_);
+    if (renderResult == OverlayRenderResult::Failed) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    {
         std::scoped_lock lock(mutex_);
-        refreshState_.MarkSubmitted(
-            visualState,
-            std::chrono::steady_clock::now());
-        if (diagnostics_) {
-            diagnostics_->LogDebug(
-                L"SteamVR overlay image submitted");
+        if (renderResult == OverlayRenderResult::TextureSubmitted) {
+            refreshState_.MarkDisplayed(visualState, now);
+        } else {
+            refreshState_.MarkSubmitted(visualState, now);
         }
+    }
+    if (diagnostics_) {
+        diagnostics_->LogDebug(
+            renderResult == OverlayRenderResult::TextureSubmitted
+                ? L"SteamVR overlay texture submitted"
+                : L"SteamVR overlay raw image submitted");
     }
 }
 

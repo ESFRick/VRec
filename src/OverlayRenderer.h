@@ -6,6 +6,12 @@
 #include <cstdint>
 #include <memory>
 
+enum class OverlayRenderResult {
+    Failed,
+    RawSubmitted,
+    TextureSubmitted,
+};
+
 class OverlayRenderer {
 public:
     static constexpr int Width = 512;
@@ -19,11 +25,13 @@ public:
     OverlayRenderer(const OverlayRenderer&) = delete;
     OverlayRenderer& operator=(const OverlayRenderer&) = delete;
 
-    bool Render(
+    OverlayRenderResult Render(
         std::uint64_t overlayHandle,
         const StatusSnapshot& status,
         const Settings& settings,
         OverlayPanelPage panelPage,
+        OverlayHotspot hoverHotspot,
+        OverlayHotspot pressedHotspot,
         bool debugChecker,
         Diagnostics* diagnostics);
     void Reset();

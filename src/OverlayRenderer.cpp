@@ -4,10 +4,16 @@
 #include "TextUtil.h"
 
 #include <Windows.h>
+#include <d3d11.h>
+#include <dxgi.h>
+#include <wrl/client.h>
 #include <openvr.h>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cstring>
+#include <iomanip>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -203,6 +209,13 @@ std::wstring OverlayErrorToString(vr::EVROverlayError error)
     return Utf8ToWide(stream.str());
 }
 
+std::wstring FormatHResult(HRESULT hr)
+{
+    std::wstringstream stream;
+    stream << L"0x" << std::hex << static_cast<unsigned long>(hr);
+    return stream.str();
+}
+
 void LogOverlayError(
     Diagnostics* diagnostics,
     const wchar_t* action,
@@ -231,6 +244,27 @@ void DrawRoundedRect(
     DcSelection penSelection(
         dc,
         pen ? pen.get() : GetStockObject(NULL_PEN));
+    RoundRect(
+        dc,
+        rect.left,
+        rect.top,
+        rect.right,
+        rect.bottom,
+        radius,
+        radius);
+}
+
+
+void DrawRoundedOutline(
+    HDC dc,
+    const RECT& rect,
+    int radius,
+    COLORREF border,
+    int borderWidth)
+{
+    GdiObject pen(CreatePen(PS_SOLID, borderWidth, border));
+    DcSelection brushSelection(dc, GetStockObject(NULL_BRUSH));
+    DcSelection penSelection(dc, pen.get());
     RoundRect(
         dc,
         rect.left,
@@ -295,10 +329,90 @@ PanelState GetPanelState(const StatusSnapshot& status)
     return PanelState::Offline;
 }
 
+
+std::wstring FormatRecordingTime(std::chrono::seconds elapsed)
+{
+    const auto totalSeconds = std::max<long long>(0, elapsed.count());
+    const long long hours = totalSeconds / 3600;
+    const long long minutes = (totalSeconds / 60) % 60;
+    const long long seconds = totalSeconds % 60;
+
+    std::wstringstream stream;
+    stream << std::setfill(L'0');
+    if (hours > 0) {
+        stream << hours << L":"
+               << std::setw(2) << minutes << L":"
+               << std::setw(2) << seconds;
+    } else {
+        stream << std::setw(2) << minutes << L":"
+               << std::setw(2) << seconds;
+    }
+    return stream.str();
+}
+
+void ApplyHoverStyle(
+    bool hovered,
+    bool pressed,
+    COLORREF& fill,
+    COLORREF& border,
+    COLORREF& text,
+    int& borderWidth)
+{
+    if (pressed) {
+        fill = Blend(fill, color::Inset, 0.28);
+        border = Blend(border, color::TextHigh, 0.32);
+        text = Blend(text, color::TextHigh, 0.16);
+        borderWidth = std::max(borderWidth, 2);
+        return;
+    }
+    if (hovered) {
+        fill = Blend(fill, color::Accent, 0.13);
+        border = Blend(border, color::Accent, 0.55);
+        text = Blend(text, color::TextHigh, 0.18);
+        borderWidth = std::max(borderWidth, 2);
+    }
+}
+
+void DrawIconButton(
+    HDC dc,
+    const RECT& rect,
+    bool hovered,
+    bool pressed,
+    const wchar_t* glyph,
+    int fontHeight,
+    COLORREF glyphColor,
+    int glyphTopOffset = 0)
+{
+    COLORREF fill = color::Panel;
+    COLORREF border = color::PanelEdge;
+    COLORREF text = glyphColor;
+    int borderWidth = 1;
+    ApplyHoverStyle(hovered, pressed, fill, border, text, borderWidth);
+    DrawRoundedRect(dc, rect, 8, fill, border, borderWidth);
+
+    GdiObject font = MakeFont(fontHeight, FW_NORMAL, L"Segoe UI Symbol");
+    if (!font) {
+        font = MakeFont(fontHeight, FW_NORMAL, L"Segoe UI");
+    }
+    if (font) {
+        SelectObject(dc, font.get());
+        SetTextColor(dc, text);
+        RECT glyphRect{ rect.left, rect.top + glyphTopOffset, rect.right, rect.bottom + glyphTopOffset };
+        DrawTextW(
+            dc,
+            glyph,
+            -1,
+            &glyphRect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+}
+
 bool DrawRecordingPanel(
     HDC dc,
     const StatusSnapshot& status,
     Language language,
+    OverlayHotspot hoverHotspot,
+    OverlayHotspot pressedHotspot,
     Diagnostics* diagnostics)
 {
     GdiObject titleFont = MakeFont(-21, FW_BOLD, L"Segoe UI");
@@ -309,8 +423,10 @@ bool DrawRecordingPanel(
         L"Segoe UI");
     GdiObject buttonMediumFont = MakeFont(-23, FW_BOLD, L"Segoe UI");
     GdiObject hintFont = MakeFont(-14, FW_NORMAL, L"Segoe UI");
+    GdiObject timerFont = MakeFont(-30, FW_BOLD, L"Segoe UI");
     if (!titleFont || !chipFont ||
-        !buttonLargeFont || !buttonMediumFont || !hintFont) {
+        !buttonLargeFont || !buttonMediumFont || !hintFont ||
+        !timerFont) {
         if (diagnostics) {
             diagnostics->LogWarning(L"Overlay font creation failed");
         }
@@ -445,6 +561,12 @@ bool DrawRecordingPanel(
     int buttonBorderWidth = 1;
     HGDIOBJ buttonFont = buttonMediumFont.get();
     std::wstring buttonLabel;
+    const bool recordButtonInteractive =
+        panel == PanelState::Ready || panel == PanelState::Recording;
+    const bool recordHovered =
+        recordButtonInteractive && hoverHotspot == OverlayHotspot::RecordButton;
+    const bool recordPressed =
+        recordButtonInteractive && pressedHotspot == OverlayHotspot::RecordButton;
 
     switch (panel) {
     case PanelState::Ready:
@@ -473,6 +595,14 @@ bool DrawRecordingPanel(
         break;
     }
 
+    ApplyHoverStyle(
+        recordHovered,
+        recordPressed,
+        buttonFill,
+        buttonBorder,
+        buttonText,
+        buttonBorderWidth);
+
     DrawRoundedRect(
         dc,
         buttonRect,
@@ -488,6 +618,9 @@ bool DrawRecordingPanel(
             ? OverlayRenderer::ButtonLetterSpacing
             : 1);
     RECT mutableButtonRect = buttonRect;
+    if (recording) {
+        mutableButtonRect.bottom = 150;
+    }
     DrawTextW(
         dc,
         buttonLabel.c_str(),
@@ -495,6 +628,28 @@ bool DrawRecordingPanel(
         &mutableButtonRect,
         DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     SetTextCharacterExtra(dc, 0);
+
+    if (recording) {
+        const std::wstring elapsed = FormatRecordingTime(status.recordingTime);
+        RECT timerPill{ 166, 154, 346, 202 };
+        DrawRoundedRect(
+            dc,
+            timerPill,
+            12,
+            Blend(color::RecordSoft, color::Inset, 0.30),
+            Blend(color::Record, color::TextHigh, recordHovered ? 0.25 : 0.08),
+            1);
+
+        SelectObject(dc, timerFont.get());
+        SetTextColor(dc, color::TextHigh);
+        RECT timerText{ timerPill.left, timerPill.top - 1, timerPill.right, timerPill.bottom - 1 };
+        DrawTextW(
+            dc,
+            elapsed.c_str(),
+            -1,
+            &timerText,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
 
     if (showHint) {
         const wchar_t* hint = russian
@@ -511,24 +666,15 @@ bool DrawRecordingPanel(
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
 
-    const RECT gear = GearButtonRect();
-    DrawRoundedRect(dc, gear, 8, color::Panel, color::PanelEdge, 1);
-
-    GdiObject gearFont = MakeFont(-24, FW_NORMAL, L"Segoe UI Symbol");
-    if (!gearFont) {
-        gearFont = MakeFont(-24, FW_NORMAL, L"Segoe UI");
-    }
-    if (gearFont) {
-        SelectObject(dc, gearFont.get());
-        SetTextColor(dc, color::TextMid);
-        RECT gearGlyph{ gear.left, gear.top - 1, gear.right, gear.bottom - 1 };
-        DrawTextW(
-            dc,
-            L"\u2699",
-            -1,
-            &gearGlyph,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    }
+    DrawIconButton(
+        dc,
+        GearButtonRect(),
+        hoverHotspot == OverlayHotspot::SettingsButton,
+        pressedHotspot == OverlayHotspot::SettingsButton,
+        L"\u2699",
+        -24,
+        color::TextMid,
+        -1);
     return true;
 }
 
@@ -568,6 +714,8 @@ void DrawSlider(HDC dc, const RECT& track, int value)
 bool DrawSettingsPanel(
     HDC dc,
     const Settings& settings,
+    OverlayHotspot hoverHotspot,
+    OverlayHotspot pressedHotspot,
     Diagnostics* diagnostics)
 {
     GdiObject titleFont = MakeFont(-21, FW_BOLD, L"Segoe UI");
@@ -606,8 +754,19 @@ bool DrawSettingsPanel(
     SetBkMode(dc, TRANSPARENT);
 
     const RECT back = SettingsBackButtonRect();
-    DrawRoundedRect(dc, back, 8, color::Panel, color::PanelEdge, 1);
-    GdiObject backPen(CreatePen(PS_SOLID, 2, color::TextMid));
+    COLORREF backFill = color::Panel;
+    COLORREF backBorder = color::PanelEdge;
+    COLORREF backText = color::TextMid;
+    int backBorderWidth = 1;
+    ApplyHoverStyle(
+        hoverHotspot == OverlayHotspot::SettingsBack,
+        pressedHotspot == OverlayHotspot::SettingsBack,
+        backFill,
+        backBorder,
+        backText,
+        backBorderWidth);
+    DrawRoundedRect(dc, back, 8, backFill, backBorder, backBorderWidth);
+    GdiObject backPen(CreatePen(PS_SOLID, 2, backText));
     DcSelection backPenSelection(dc, backPen.get());
     MoveToEx(dc, back.left + 21, back.top + 10, nullptr);
     LineTo(dc, back.left + 11, back.top + 17);
@@ -648,21 +807,65 @@ bool DrawSettingsPanel(
 
     const RECT minus = HideAngleMinusRect();
     const RECT plus = HideAnglePlusRect();
-    DrawRoundedRect(dc, minus, 10, color::Inset, color::Border, 1);
-    DrawRoundedRect(dc, plus, 10, color::Inset, color::Border, 1);
+    COLORREF minusFill = color::Inset;
+    COLORREF minusBorder = color::Border;
+    COLORREF minusTextColor = color::TextHigh;
+    int minusBorderWidth = 1;
+    ApplyHoverStyle(
+        hoverHotspot == OverlayHotspot::HideAngleMinus,
+        pressedHotspot == OverlayHotspot::HideAngleMinus,
+        minusFill,
+        minusBorder,
+        minusTextColor,
+        minusBorderWidth);
+    COLORREF plusFill = color::Inset;
+    COLORREF plusBorder = color::Border;
+    COLORREF plusTextColor = color::TextHigh;
+    int plusBorderWidth = 1;
+    ApplyHoverStyle(
+        hoverHotspot == OverlayHotspot::HideAnglePlus,
+        pressedHotspot == OverlayHotspot::HideAnglePlus,
+        plusFill,
+        plusBorder,
+        plusTextColor,
+        plusBorderWidth);
+    DrawRoundedRect(dc, minus, 10, minusFill, minusBorder, minusBorderWidth);
+    DrawRoundedRect(dc, plus, 10, plusFill, plusBorder, plusBorderWidth);
     SelectObject(dc, valueFont.get());
-    SetTextColor(dc, color::TextHigh);
     RECT minusText = minus;
     RECT plusText = plus;
+    SetTextColor(dc, minusTextColor);
     DrawTextW(dc, L"−", -1, &minusText, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SetTextColor(dc, plusTextColor);
     DrawTextW(dc, L"+", -1, &plusText, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
     DrawSlider(dc, HideAngleSliderRect(), settings.overlay.hideAngleDegrees);
+    if (hoverHotspot == OverlayHotspot::HideAngleSlider ||
+        pressedHotspot == OverlayHotspot::HideAngleSlider) {
+        const RECT track = HideAngleSliderRect();
+        DrawRoundedOutline(
+            dc,
+            RECT{ track.left + 2, track.top + 2, track.right - 2, track.bottom - 2 },
+            9,
+            color::Accent,
+            pressedHotspot == OverlayHotspot::HideAngleSlider ? 2 : 1);
+    }
 
     const RECT reset = HideAngleResetRect();
-    DrawRoundedRect(dc, reset, 9, color::Panel, color::PanelEdge, 1);
+    COLORREF resetFill = color::Panel;
+    COLORREF resetBorder = color::PanelEdge;
+    COLORREF resetTextColor = color::TextHigh;
+    int resetBorderWidth = 1;
+    ApplyHoverStyle(
+        hoverHotspot == OverlayHotspot::HideAngleReset,
+        pressedHotspot == OverlayHotspot::HideAngleReset,
+        resetFill,
+        resetBorder,
+        resetTextColor,
+        resetBorderWidth);
+    DrawRoundedRect(dc, reset, 9, resetFill, resetBorder, resetBorderWidth);
     SelectObject(dc, buttonFont.get());
-    SetTextColor(dc, color::TextHigh);
+    SetTextColor(dc, resetTextColor);
     RECT resetText = reset;
     DrawTextW(
         dc,
@@ -679,12 +882,25 @@ bool DrawPanel(
     const StatusSnapshot& status,
     const Settings& settings,
     OverlayPanelPage panelPage,
+    OverlayHotspot hoverHotspot,
+    OverlayHotspot pressedHotspot,
     Diagnostics* diagnostics)
 {
     if (panelPage == OverlayPanelPage::Settings) {
-        return DrawSettingsPanel(dc, settings, diagnostics);
+        return DrawSettingsPanel(
+            dc,
+            settings,
+            hoverHotspot,
+            pressedHotspot,
+            diagnostics);
     }
-    return DrawRecordingPanel(dc, status, settings.language, diagnostics);
+    return DrawRecordingPanel(
+        dc,
+        status,
+        settings.language,
+        hoverHotspot,
+        pressedHotspot,
+        diagnostics);
 }
 
 bool RenderPixels(
@@ -692,6 +908,8 @@ bool RenderPixels(
     const StatusSnapshot& status,
     const Settings& settings,
     OverlayPanelPage panelPage,
+    OverlayHotspot hoverHotspot,
+    OverlayHotspot pressedHotspot,
     bool debugChecker,
     Diagnostics* diagnostics)
 {
@@ -741,7 +959,14 @@ bool RenderPixels(
 
     if (debugChecker) {
         DrawDebugChecker(dc.get());
-    } else if (!DrawPanel(dc.get(), status, settings, panelPage, diagnostics)) {
+    } else if (!DrawPanel(
+                   dc.get(),
+                   status,
+                   settings,
+                   panelPage,
+                   hoverHotspot,
+                   pressedHotspot,
+                   diagnostics)) {
         return false;
     }
 
@@ -767,7 +992,243 @@ bool RenderPixels(
 } // namespace
 
 struct OverlayRenderer::Impl {
+    struct D3dTexture {
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+        HANDLE sharedHandle = nullptr;
+    };
+
+    bool EnsureD3d(Diagnostics* diagnostics)
+    {
+        if (d3dDisabled) {
+            return false;
+        }
+        if (device && context && textures[0].texture && textures[1].texture) {
+            return true;
+        }
+
+        ResetD3d();
+
+        static constexpr D3D_FEATURE_LEVEL kFeatureLevels[] = {
+            D3D_FEATURE_LEVEL_11_0,
+            D3D_FEATURE_LEVEL_10_1,
+            D3D_FEATURE_LEVEL_10_0,
+        };
+
+        D3D_FEATURE_LEVEL createdLevel{};
+        HRESULT hr = D3D11CreateDevice(
+            nullptr,
+            D3D_DRIVER_TYPE_HARDWARE,
+            nullptr,
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+            kFeatureLevels,
+            static_cast<UINT>(sizeof(kFeatureLevels) / sizeof(kFeatureLevels[0])),
+            D3D11_SDK_VERSION,
+            device.GetAddressOf(),
+            &createdLevel,
+            context.GetAddressOf());
+        if (FAILED(hr)) {
+            d3dDisabled = true;
+            if (diagnostics && !d3dInitFailureLogged) {
+                diagnostics->LogWarning(
+                    std::wstring(L"D3D11 overlay device creation failed: ") +
+                    FormatHResult(hr) + L"; using SetOverlayRaw fallback");
+                d3dInitFailureLogged = true;
+            }
+            return false;
+        }
+
+        if (!CreateTextures(true, diagnostics) &&
+            !CreateTextures(false, diagnostics)) {
+            d3dDisabled = true;
+            ResetD3d();
+            return false;
+        }
+
+        if (diagnostics && !d3dReadyLogged) {
+            diagnostics->LogInfo(
+                textures[0].sharedHandle
+                    ? L"Overlay renderer using D3D11 shared texture path"
+                    : L"Overlay renderer using D3D11 texture path");
+            d3dReadyLogged = true;
+        }
+        return true;
+    }
+
+    bool CreateTextures(bool shared, Diagnostics* diagnostics)
+    {
+        for (auto& texture : textures) {
+            texture = {};
+        }
+
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = OverlayRenderer::Width;
+        desc.Height = OverlayRenderer::Height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        desc.MiscFlags = shared ? D3D11_RESOURCE_MISC_SHARED : 0;
+
+        for (auto& frame : textures) {
+            const HRESULT createResult = device->CreateTexture2D(
+                &desc,
+                nullptr,
+                frame.texture.GetAddressOf());
+            if (FAILED(createResult)) {
+                if (diagnostics && !d3dTextureFailureLogged) {
+                    diagnostics->LogWarning(
+                        std::wstring(shared
+                            ? L"D3D11 shared overlay texture creation failed: "
+                            : L"D3D11 overlay texture creation failed: ") +
+                        FormatHResult(createResult));
+                    d3dTextureFailureLogged = true;
+                }
+                return false;
+            }
+
+            if (shared) {
+                Microsoft::WRL::ComPtr<IDXGIResource> dxgiResource;
+                const HRESULT queryResult = frame.texture.As(&dxgiResource);
+                if (FAILED(queryResult)) {
+                    if (diagnostics && !d3dTextureFailureLogged) {
+                        diagnostics->LogWarning(
+                            std::wstring(L"D3D11 overlay texture cannot be shared: ") +
+                            FormatHResult(queryResult));
+                        d3dTextureFailureLogged = true;
+                    }
+                    return false;
+                }
+
+                const HRESULT handleResult = dxgiResource->GetSharedHandle(
+                    &frame.sharedHandle);
+                if (FAILED(handleResult) || !frame.sharedHandle) {
+                    if (diagnostics && !d3dTextureFailureLogged) {
+                        diagnostics->LogWarning(
+                            std::wstring(L"D3D11 overlay texture shared handle creation failed: ") +
+                            FormatHResult(handleResult));
+                        d3dTextureFailureLogged = true;
+                    }
+                    return false;
+                }
+            }
+        }
+
+        d3dUseDirectTexture = !shared;
+        textureIndex = 0;
+        return true;
+    }
+
+    OverlayRenderResult SubmitD3d(
+        std::uint64_t overlayHandle,
+        Diagnostics* diagnostics)
+    {
+        if (!EnsureD3d(diagnostics)) {
+            return OverlayRenderResult::Failed;
+        }
+
+        D3dTexture& frame = textures[textureIndex];
+        context->UpdateSubresource(
+            frame.texture.Get(),
+            0,
+            nullptr,
+            pixels.data(),
+            OverlayRenderer::Width * 4,
+            0);
+        context->Flush();
+
+        vr::EVROverlayError error = vr::VROverlayError_None;
+        if (!d3dUseDirectTexture && frame.sharedHandle) {
+            error = SubmitD3dTexture(
+                overlayHandle,
+                frame.sharedHandle,
+                vr::TextureType_DXGISharedHandle);
+            if (error != vr::VROverlayError_None) {
+                if (error != lastTextureError) {
+                    LogOverlayError(diagnostics, L"SetOverlayTexture DXGISharedHandle", error);
+                }
+                lastTextureError = error;
+                d3dUseDirectTexture = true;
+            }
+        }
+
+        if (d3dUseDirectTexture) {
+            error = SubmitD3dTexture(
+                overlayHandle,
+                frame.texture.Get(),
+                vr::TextureType_DirectX);
+            if (error != vr::VROverlayError_None) {
+                if (error != lastTextureError) {
+                    LogOverlayError(diagnostics, L"SetOverlayTexture DirectX", error);
+                }
+                lastTextureError = error;
+                d3dDisabled = true;
+                return OverlayRenderResult::Failed;
+            }
+        }
+
+        lastTextureError = vr::VROverlayError_None;
+        textureIndex = (textureIndex + 1) % textures.size();
+        return OverlayRenderResult::TextureSubmitted;
+    }
+
+    vr::EVROverlayError SubmitD3dTexture(
+        std::uint64_t overlayHandle,
+        void* handle,
+        vr::ETextureType type)
+    {
+        vr::Texture_t texture{};
+        texture.handle = handle;
+        texture.eType = type;
+        texture.eColorSpace = vr::ColorSpace_Gamma;
+        return vr::VROverlay()->SetOverlayTexture(overlayHandle, &texture);
+    }
+
+    OverlayRenderResult SubmitRaw(
+        std::uint64_t overlayHandle,
+        Diagnostics* diagnostics)
+    {
+        const auto error = vr::VROverlay()->SetOverlayRaw(
+            overlayHandle,
+            pixels.data(),
+            OverlayRenderer::Width,
+            OverlayRenderer::Height,
+            4);
+        if (error != vr::VROverlayError_None) {
+            if (error != lastRawError) {
+                LogOverlayError(diagnostics, L"SetOverlayRaw", error);
+            }
+            lastRawError = error;
+            return OverlayRenderResult::Failed;
+        }
+        lastRawError = vr::VROverlayError_None;
+        return OverlayRenderResult::RawSubmitted;
+    }
+
+    void ResetD3d()
+    {
+        for (auto& texture : textures) {
+            texture = {};
+        }
+        context.Reset();
+        device.Reset();
+        textureIndex = 0;
+        d3dUseDirectTexture = false;
+        lastTextureError = vr::VROverlayError_None;
+    }
+
     std::vector<std::uint8_t> pixels;
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+    std::array<D3dTexture, 2> textures;
+    size_t textureIndex = 0;
+    bool d3dDisabled = false;
+    bool d3dUseDirectTexture = false;
+    bool d3dInitFailureLogged = false;
+    bool d3dTextureFailureLogged = false;
+    bool d3dReadyLogged = false;
+    vr::EVROverlayError lastTextureError = vr::VROverlayError_None;
     vr::EVROverlayError lastRawError = vr::VROverlayError_None;
 };
 
@@ -778,55 +1239,54 @@ OverlayRenderer::OverlayRenderer()
 
 OverlayRenderer::~OverlayRenderer() = default;
 
-bool OverlayRenderer::Render(
+OverlayRenderResult OverlayRenderer::Render(
     std::uint64_t overlayHandle,
     const StatusSnapshot& status,
     const Settings& settings,
     OverlayPanelPage panelPage,
+    OverlayHotspot hoverHotspot,
+    OverlayHotspot pressedHotspot,
     bool debugChecker,
     Diagnostics* diagnostics)
 {
     if (!vr::VROverlay() ||
         overlayHandle == vr::k_ulOverlayHandleInvalid ||
         overlayHandle == 0) {
-        return false;
+        return OverlayRenderResult::Failed;
     }
     if (!RenderPixels(
             impl_->pixels,
             status,
             settings,
             panelPage,
+            hoverHotspot,
+            pressedHotspot,
             debugChecker,
             diagnostics)) {
-        return false;
+        return OverlayRenderResult::Failed;
     }
-    const auto clearError =
-        vr::VROverlay()->ClearOverlayTexture(overlayHandle);
-    if (clearError != vr::VROverlayError_None) {
-        LogOverlayError(
-            diagnostics,
-            L"ClearOverlayTexture",
-            clearError);
-    }
-    const auto error = vr::VROverlay()->SetOverlayRaw(
+
+    const OverlayRenderResult textureResult = impl_->SubmitD3d(
         overlayHandle,
-        impl_->pixels.data(),
-        Width,
-        Height,
-        4);
-    if (error != vr::VROverlayError_None) {
-        if (error != impl_->lastRawError) {
-            LogOverlayError(diagnostics, L"SetOverlayRaw", error);
-        }
-        impl_->lastRawError = error;
-        return false;
+        diagnostics);
+    if (textureResult == OverlayRenderResult::TextureSubmitted) {
+        return textureResult;
     }
-    impl_->lastRawError = vr::VROverlayError_None;
-    return true;
+
+    return impl_->SubmitRaw(
+        overlayHandle,
+        diagnostics);
 }
 
 void OverlayRenderer::Reset()
 {
     impl_->pixels.clear();
+    impl_->ResetD3d();
+    impl_->d3dDisabled = false;
+    impl_->d3dUseDirectTexture = false;
+    impl_->d3dInitFailureLogged = false;
+    impl_->d3dTextureFailureLogged = false;
+    impl_->d3dReadyLogged = false;
+    impl_->lastTextureError = vr::VROverlayError_None;
     impl_->lastRawError = vr::VROverlayError_None;
 }

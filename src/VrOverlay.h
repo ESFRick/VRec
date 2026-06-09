@@ -116,6 +116,8 @@ private:
     bool cursorPressed_ = false;
     float cursorX_ = 0.0f;
     float cursorY_ = 0.0f;
+    OverlayHotspot hoverHotspot_ = OverlayHotspot::None;
+    OverlayHotspot pressedHotspot_ = OverlayHotspot::None;
     bool hideByAngleVisible_ = true;
     OverlayPanelPage overlayPage_ = OverlayPanelPage::Recording;
     bool mainOverlayFadeActive_ = false;
