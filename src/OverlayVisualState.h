@@ -52,10 +52,11 @@ inline OverlayVisualState MakeOverlayVisualState(
     OverlayPanelPage panelPage,
     bool debugChecker)
 {
+    const bool obsConnected = status.obsConnState == ObsConnState::Connected;
     return {
         status.recorderState,
-        status.obsConnState,
-        status.lastError,
+        obsConnected ? ObsConnState::Connected : ObsConnState::Disconnected,
+        obsConnected ? status.lastError : std::wstring(),
         settings.language,
         panelPage,
         settings.overlay.hideAngleDegrees,

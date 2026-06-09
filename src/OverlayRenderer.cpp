@@ -292,12 +292,6 @@ PanelState GetPanelState(const StatusSnapshot& status)
     if (status.obsConnState == ObsConnState::Connected) {
         return PanelState::Ready;
     }
-    if (status.obsConnState == ObsConnState::Connecting) {
-        return PanelState::Connecting;
-    }
-    if (!status.lastError.empty()) {
-        return PanelState::Error;
-    }
     return PanelState::Offline;
 }
 
@@ -326,8 +320,7 @@ bool DrawRecordingPanel(
     const PanelState panel = GetPanelState(status);
     const bool russian = language == Language::Russian;
     const bool recording = panel == PanelState::Recording;
-    const bool showHint =
-        panel == PanelState::Offline || panel == PanelState::Error;
+    const bool showHint = panel == PanelState::Offline;
 
     DrawRoundedRect(
         dc,
@@ -404,20 +397,12 @@ bool DrawRecordingPanel(
             &recordRect,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     } else {
-        COLORREF tone = color::TextMid;
-        const wchar_t* label = russian ? L"● Нет OBS" : L"● No OBS";
+        COLORREF tone = color::Warn;
+        const wchar_t* label = russian ? L"● OBS не в сети" : L"● OBS Offline";
         switch (panel) {
         case PanelState::Ready:
             tone = color::Ready;
             label = russian ? L"● Готов" : L"● Ready";
-            break;
-        case PanelState::Connecting:
-            tone = color::Warn;
-            label = russian ? L"● Подключение" : L"● Connecting";
-            break;
-        case PanelState::Error:
-            tone = color::Danger;
-            label = russian ? L"● Ошибка OBS" : L"● OBS error";
             break;
         default:
             break;
@@ -479,16 +464,12 @@ bool DrawRecordingPanel(
         buttonLabel = std::wstring(L"■  ") + Tr(language, TextId::OverlayStop);
         break;
     case PanelState::Connecting:
-        buttonLabel = russian ? L"Подключение" : L"Connecting";
-        break;
     case PanelState::Error:
+    default:
         buttonFill = color::WarnSoft;
         buttonBorder = color::Warn;
         buttonText = color::Warn;
-        buttonLabel = russian ? L"Нет связи с OBS" : L"OBS offline";
-        break;
-    default:
-        buttonLabel = russian ? L"Нет связи с OBS" : L"OBS offline";
+        buttonLabel = russian ? L"OBS не в сети" : L"OBS Offline";
         break;
     }
 
@@ -516,16 +497,9 @@ bool DrawRecordingPanel(
     SetTextCharacterExtra(dc, 0);
 
     if (showHint) {
-        const wchar_t* hint = nullptr;
-        if (panel == PanelState::Error) {
-            hint = russian
-                ? L"Не удалось подключиться к OBS. Проверьте в приложении."
-                : L"OBS connection failed. Check it in the desktop app.";
-        } else {
-            hint = russian
-                ? L"Подключитесь к OBS в приложении, чтобы записывать."
-                : L"Connect to OBS in the desktop app to record.";
-        }
+        const wchar_t* hint = russian
+            ? L"Повторное подключение..."
+            : L"Trying to reconnect...";
         SelectObject(dc, hintFont.get());
         SetTextColor(dc, color::TextDim);
         RECT hintRect{22, 206, 490, 238};

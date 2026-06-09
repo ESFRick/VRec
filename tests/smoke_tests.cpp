@@ -318,11 +318,11 @@ void TestOverlayVisualState()
     status.obsConnState = ObsConnState::Disconnected;
     status.lastError.clear();
     Check(
-        OverlayNeedsRender(
+        !OverlayNeedsRender(
             offline,
             MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
             false),
-        L"overlay detects cleared errors");
+        L"overlay ignores offline OBS error text changes");
 
     status.lastError = L"OBS unavailable";
     status.recorderState = RecorderState::Recording;
