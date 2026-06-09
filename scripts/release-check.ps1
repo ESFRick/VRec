@@ -131,10 +131,23 @@ function Check-Repository {
         Get-ChildItem -LiteralPath (Join-Path $root "src") -File
         Get-ChildItem -LiteralPath (Join-Path $root "web") -File
     )
-    foreach ($legacyKey in @("outputFolder", "autoLaunch", "overlayScale", "overlayOffset", "obsAutoConnect")) {
+    foreach ($legacyKey in @("outputFolder", "overlayScale", "overlayOffset", "obsAutoConnect")) {
         $matches = @($runtimeFiles | Select-String -SimpleMatch $legacyKey)
         if ($matches.Count -gt 0) {
             throw "Legacy settings key '$legacyKey' remains in runtime code: $($matches[0].Path):$($matches[0].LineNumber)"
+        }
+    }
+
+    foreach ($legacyKey in @("autoLaunch")) {
+        $patterns = @(
+            '"' + $legacyKey + '"',
+            "'" + $legacyKey + "'"
+        )
+        foreach ($pattern in $patterns) {
+            $matches = @($runtimeFiles | Select-String -SimpleMatch $pattern)
+            if ($matches.Count -gt 0) {
+                throw "Legacy settings key '$legacyKey' remains in runtime code: $($matches[0].Path):$($matches[0].LineNumber)"
+            }
         }
     }
 

@@ -47,6 +47,7 @@ private:
     void UpdateMainOverlayVisibility();
     void BeginMainOverlayFade(bool visible);
     void UpdateMainOverlayFade();
+    bool PollSystemEvents();
     void PollEvents();
     bool InitializeInput();
     void UpdateControllerInteraction();
@@ -75,6 +76,9 @@ private:
     OverlayRenderer renderer_;
     bool mainOverlayVisible_ = false;
     bool manifestApplied_ = false;
+    bool manifestErrorLogged_ = false;
+    bool reconnectBlockedUntilSteamVrExit_ = false;
+    bool reconnectBlockLogged_ = false;
     bool attachDirty_ = true;
     uint32_t lastAttachedController_ = 0xFFFFFFFFu;
     uint64_t cursorOverlayHandle_ = 0;

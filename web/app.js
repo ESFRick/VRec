@@ -170,7 +170,9 @@
         hand: s.overlay ? s.overlay.hand : "right",
         placement: s.overlay ? s.overlay.placement : "wristOutside"
       },
-      advanced: { logLevel: s.advanced ? s.advanced.logLevel : "info" }
+      advanced: {
+        logLevel: s.advanced ? s.advanced.logLevel : "info"
+      }
     };
     $("#obsHost").value = settings.obs.host;
     $("#obsPort").value = settings.obs.port;

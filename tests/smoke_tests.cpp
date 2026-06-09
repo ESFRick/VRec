@@ -117,6 +117,7 @@ void TestSettingsMigration(const std::filesystem::path& path, Diagnostics& log)
   "overlayPlacement": "underController",
   "outputFolder": "C:\\ignored",
   "autoLaunch": true,
+  "startWithSteamVR": true,
   "overlayScale": 1.4,
   "unknownFutureField": {"host": "wrong.local"}
 })");
@@ -134,6 +135,7 @@ void TestSettingsMigration(const std::filesystem::path& path, Diagnostics& log)
     const std::string migrated = ReadFile(path);
     Check(migrated.find("legacy.local") != std::string::npos, L"migrated host is retained");
     Check(migrated.find("unknownFutureField") == std::string::npos, L"unknown legacy fields are not rewritten");
+    Check(migrated.find("startWithSteamVR") == std::string::npos, L"removed SteamVR autostart setting is not rewritten");
 }
 
 void TestFreshSettingsDoNotConnect(const std::filesystem::path& path, Diagnostics& log)

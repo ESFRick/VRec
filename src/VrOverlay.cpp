@@ -3,11 +3,18 @@
 #include "TextUtil.h"
 
 #include <Windows.h>
+#include <TlHelp32.h>
 #include <openvr.h>
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cwctype>
+#include <exception>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <mutex>
 #include <vector>
@@ -36,6 +43,13 @@ constexpr double kPi = 3.14159265358979323846;
 constexpr float kHideByAngleShowDot = 0.25881905f; // cos(75 deg)
 constexpr float kHideByAngleHideDot = 0.17364818f; // cos(80 deg)
 constexpr auto kMainOverlayFadeDuration = std::chrono::milliseconds(80);
+
+
+using nlohmann::json;
+
+constexpr const wchar_t* kSteamRegistryKey = L"Software\\Valve\\Steam";
+constexpr const wchar_t* kSteamRegistryWow64Key = L"Software\\WOW6432Node\\Valve\\Steam";
+
 
 RECT RecButtonRect()
 {
@@ -170,6 +184,401 @@ bool IsValidOverlayHandle(uint64_t handle)
 {
     return handle != 0 && handle != vr::k_ulOverlayHandleInvalid;
 }
+
+
+bool IsNamedProcessRunning(const wchar_t* executableName)
+{
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    bool found = false;
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            if (CompareStringOrdinal(entry.szExeFile, -1, executableName, -1, TRUE) == CSTR_EQUAL) {
+                found = true;
+                break;
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+
+    CloseHandle(snapshot);
+    return found;
+}
+
+bool IsSteamVrProcessRunning()
+{
+    return IsNamedProcessRunning(L"vrserver.exe") ||
+        IsNamedProcessRunning(L"vrcompositor.exe") ||
+        IsNamedProcessRunning(L"vrdashboard.exe");
+}
+
+std::filesystem::path ReadRegistryStringPath(HKEY root, const wchar_t* subkey, const wchar_t* valueName)
+{
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(root, subkey, 0, KEY_READ, &key) != ERROR_SUCCESS) {
+        return {};
+    }
+
+    DWORD type = 0;
+    DWORD bytes = 0;
+    const LONG queryResult = RegQueryValueExW(key, valueName, nullptr, &type, nullptr, &bytes);
+    if (queryResult != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ) || bytes < sizeof(wchar_t)) {
+        RegCloseKey(key);
+        return {};
+    }
+
+    std::wstring value(bytes / sizeof(wchar_t), L'\0');
+    const LONG readResult = RegQueryValueExW(
+        key,
+        valueName,
+        nullptr,
+        &type,
+        reinterpret_cast<LPBYTE>(value.data()),
+        &bytes);
+    RegCloseKey(key);
+    if (readResult != ERROR_SUCCESS) {
+        return {};
+    }
+
+    while (!value.empty() && value.back() == L'\0') {
+        value.pop_back();
+    }
+    std::replace(value.begin(), value.end(), L'/', L'\\');
+    return std::filesystem::path(value);
+}
+
+std::filesystem::path SteamConfigDirectory()
+{
+    const std::filesystem::path fromUserRegistry = ReadRegistryStringPath(
+        HKEY_CURRENT_USER,
+        kSteamRegistryKey,
+        L"SteamPath");
+    if (!fromUserRegistry.empty()) {
+        return fromUserRegistry / L"config";
+    }
+
+    const std::filesystem::path fromMachineRegistry = ReadRegistryStringPath(
+        HKEY_LOCAL_MACHINE,
+        kSteamRegistryWow64Key,
+        L"InstallPath");
+    if (!fromMachineRegistry.empty()) {
+        return fromMachineRegistry / L"config";
+    }
+
+    wchar_t programFilesX86[MAX_PATH]{};
+    const DWORD count = GetEnvironmentVariableW(L"ProgramFiles(x86)", programFilesX86, ARRAYSIZE(programFilesX86));
+    if (count > 0 && count < ARRAYSIZE(programFilesX86)) {
+        return std::filesystem::path(programFilesX86) / L"Steam" / L"config";
+    }
+
+    return {};
+}
+
+std::string ReadUtf8File(const std::filesystem::path& path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        return {};
+    }
+    std::ostringstream stream;
+    stream << file.rdbuf();
+    return stream.str();
+}
+
+bool WriteUtf8File(const std::filesystem::path& path, const std::string& text)
+{
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file) {
+        return false;
+    }
+    file << text;
+    return static_cast<bool>(file);
+}
+
+bool ManifestFileDeclaresVRec(const std::filesystem::path& path)
+{
+    try {
+        const std::string text = ReadUtf8File(path);
+        if (text.empty()) {
+            return false;
+        }
+        const json document = json::parse(text);
+        const auto applications = document.find("applications");
+        if (applications == document.end() || !applications->is_array()) {
+            return false;
+        }
+        for (const json& application : *applications) {
+            const auto appKey = application.find("app_key");
+            if (appKey != application.end() && appKey->is_string() && appKey->get<std::string>() == kAppKey) {
+                return true;
+            }
+        }
+    } catch (const std::exception&) {
+    }
+    return false;
+}
+
+bool LooksLikeStaleVRecManifestPath(const std::filesystem::path& path)
+{
+    std::wstring text = path.wstring();
+    std::replace(text.begin(), text.end(), L'/', L'\\');
+    std::transform(text.begin(), text.end(), text.begin(), [](wchar_t ch) {
+        return static_cast<wchar_t>(std::towlower(ch));
+    });
+    return text.find(L"vrec") != std::wstring::npos &&
+        text.size() >= std::wstring(L"app.vrmanifest").size() &&
+        text.rfind(L"app.vrmanifest") == text.size() - std::wstring(L"app.vrmanifest").size();
+}
+
+std::wstring ComparablePath(std::filesystem::path path)
+{
+    try {
+        path = std::filesystem::absolute(path).lexically_normal();
+    } catch (const std::exception&) {
+        path = path.lexically_normal();
+    }
+
+    std::wstring text = path.wstring();
+    std::replace(text.begin(), text.end(), L'/', L'\\');
+    while (!text.empty() && text.back() == L'\\') {
+        text.pop_back();
+    }
+    std::transform(text.begin(), text.end(), text.begin(), [](wchar_t ch) {
+        return static_cast<wchar_t>(std::towlower(ch));
+    });
+    return text;
+}
+
+bool SamePath(const std::filesystem::path& a, const std::filesystem::path& b)
+{
+    return ComparablePath(a) == ComparablePath(b);
+}
+
+bool EnsureVRecManifestInSteamAppConfig(Diagnostics* diagnostics)
+{
+    const std::filesystem::path currentManifest = ExecutableDirectory() / L"app.vrmanifest";
+    if (!std::filesystem::exists(currentManifest)) {
+        if (diagnostics) {
+            diagnostics->LogWarning(L"SteamVR app manifest not found: " + currentManifest.wstring());
+        }
+        return false;
+    }
+
+    const std::filesystem::path steamConfig = SteamConfigDirectory();
+    if (steamConfig.empty()) {
+        if (diagnostics) {
+            diagnostics->LogWarning(L"Steam config directory was not found; SteamVR app registration skipped");
+        }
+        return false;
+    }
+
+    const std::filesystem::path appConfig = steamConfig / L"appconfig.json";
+    json document = json::object();
+    if (std::filesystem::exists(appConfig)) {
+        try {
+            const std::string text = ReadUtf8File(appConfig);
+            if (!text.empty()) {
+                document = json::parse(text);
+            }
+        } catch (const std::exception&) {
+            if (diagnostics) {
+                diagnostics->LogWarning(L"SteamVR appconfig.json could not be parsed; app registration skipped");
+            }
+            return false;
+        }
+    }
+    if (!document.is_object()) {
+        document = json::object();
+    }
+
+    json manifestPaths = json::array();
+    const auto existing = document.find("manifest_paths");
+    if (existing != document.end() && existing->is_array()) {
+        manifestPaths = *existing;
+    }
+
+    json updated = json::array();
+    bool changed = false;
+    bool currentPresent = false;
+
+    for (const json& item : manifestPaths) {
+        if (!item.is_string()) {
+            changed = true;
+            continue;
+        }
+
+        const std::filesystem::path candidate = Utf8ToWide(item.get<std::string>());
+        if (SamePath(candidate, currentManifest)) {
+            if (!currentPresent) {
+                updated.push_back(WideToUtf8(currentManifest.wstring()));
+                currentPresent = true;
+            } else {
+                changed = true;
+            }
+            continue;
+        }
+
+        const bool staleVRec =
+            (std::filesystem::exists(candidate) && ManifestFileDeclaresVRec(candidate)) ||
+            (!std::filesystem::exists(candidate) && LooksLikeStaleVRecManifestPath(candidate));
+        if (staleVRec) {
+            changed = true;
+            continue;
+        }
+
+        updated.push_back(item);
+    }
+
+    if (!currentPresent) {
+        updated.push_back(WideToUtf8(currentManifest.wstring()));
+        changed = true;
+    }
+
+    document["manifest_paths"] = std::move(updated);
+    if (!changed) {
+        return true;
+    }
+
+    const std::filesystem::path backup = appConfig.wstring() + L".vrec.bak";
+    try {
+        if (std::filesystem::exists(appConfig)) {
+            std::filesystem::copy_file(appConfig, backup, std::filesystem::copy_options::overwrite_existing);
+        }
+    } catch (const std::exception&) {
+    }
+
+    const bool saved = WriteUtf8File(appConfig, document.dump(3) + "\n");
+    if (diagnostics) {
+        if (saved) {
+            diagnostics->LogInfo(L"SteamVR app manifest path registered: " + currentManifest.wstring());
+        } else {
+            diagnostics->LogWarning(L"SteamVR appconfig.json could not be written: " + appConfig.wstring());
+        }
+    }
+    return saved;
+}
+
+std::wstring ApplicationPropertyString(
+    vr::IVRApplications* apps,
+    const char* appKey,
+    vr::EVRApplicationProperty property)
+{
+    if (!apps) {
+        return {};
+    }
+
+    vr::EVRApplicationError error = vr::VRApplicationError_None;
+    char stackBuffer[512]{};
+    const uint32_t required = apps->GetApplicationPropertyString(
+        appKey,
+        property,
+        stackBuffer,
+        static_cast<uint32_t>(sizeof(stackBuffer)),
+        &error);
+    if (error != vr::VRApplicationError_None) {
+        return {};
+    }
+    if (required <= sizeof(stackBuffer)) {
+        return Utf8ToWide(stackBuffer);
+    }
+
+    std::vector<char> buffer(required + 1, '\0');
+    error = vr::VRApplicationError_None;
+    apps->GetApplicationPropertyString(
+        appKey,
+        property,
+        buffer.data(),
+        static_cast<uint32_t>(buffer.size()),
+        &error);
+    return error == vr::VRApplicationError_None ? Utf8ToWide(buffer.data()) : std::wstring();
+}
+
+bool RegisteredApplicationMatchesCurrentPath(vr::IVRApplications* apps, const std::filesystem::path& currentExecutableDir)
+{
+    const std::wstring registeredWorkingDir = ApplicationPropertyString(
+        apps,
+        kAppKey,
+        vr::VRApplicationProperty_WorkingDirectory_String);
+    if (!registeredWorkingDir.empty() &&
+        SamePath(std::filesystem::path(registeredWorkingDir), currentExecutableDir)) {
+        return true;
+    }
+
+    const std::wstring binaryPath = ApplicationPropertyString(
+        apps,
+        kAppKey,
+        vr::VRApplicationProperty_BinaryPath_String);
+    if (!binaryPath.empty()) {
+        const std::filesystem::path binary = std::filesystem::path(binaryPath);
+        if (binary.is_absolute()) {
+            return SamePath(binary.parent_path(), currentExecutableDir);
+        }
+    }
+
+    return false;
+}
+
+void AddUniquePath(std::vector<std::filesystem::path>& paths, std::filesystem::path path)
+{
+    if (path.empty()) {
+        return;
+    }
+
+    const std::wstring comparable = ComparablePath(path);
+    const auto found = std::find_if(paths.begin(), paths.end(), [&](const std::filesystem::path& existing) {
+        return ComparablePath(existing) == comparable;
+    });
+    if (found == paths.end()) {
+        paths.push_back(std::move(path));
+    }
+}
+
+void RemoveRegisteredApplicationManifest(vr::IVRApplications* apps, const std::filesystem::path& currentManifest)
+{
+    if (!apps) {
+        return;
+    }
+
+    std::vector<std::filesystem::path> manifests;
+    AddUniquePath(manifests, currentManifest);
+
+    const std::wstring registeredWorkingDir = ApplicationPropertyString(
+        apps,
+        kAppKey,
+        vr::VRApplicationProperty_WorkingDirectory_String);
+    if (!registeredWorkingDir.empty()) {
+        AddUniquePath(manifests, std::filesystem::path(registeredWorkingDir) / L"app.vrmanifest");
+    }
+
+    const std::wstring binaryPath = ApplicationPropertyString(
+        apps,
+        kAppKey,
+        vr::VRApplicationProperty_BinaryPath_String);
+    if (!binaryPath.empty()) {
+        std::filesystem::path binary(binaryPath);
+        if (binary.is_absolute()) {
+            AddUniquePath(manifests, binary.parent_path() / L"app.vrmanifest");
+        }
+    }
+
+    for (const auto& manifest : manifests) {
+        apps->RemoveApplicationManifest(WideToUtf8(manifest.wstring()).c_str());
+    }
+}
+
+std::wstring ApplicationErrorToString(vr::IVRApplications* apps, vr::EVRApplicationError error)
+{
+    const char* name = apps ? apps->GetApplicationsErrorNameFromEnum(error) : nullptr;
+    std::stringstream stream;
+    stream << (name ? name : "EVRApplicationError") << " (" << static_cast<int>(error) << ")";
+    return Utf8ToWide(stream.str());
+}
+
 
 vr::EVROverlayError CreateOrFindOverlay(const char* key, const char* name, vr::VROverlayHandle_t* handle)
 {
@@ -397,6 +806,8 @@ bool VrOverlay::Start(
         statusProvider_ = std::move(statusProvider);
     }
 
+    EnsureVRecManifestInSteamAppConfig(diagnostics);
+
     stop_ = false;
     worker_ = std::thread(&VrOverlay::Run, this);
     return true;
@@ -446,6 +857,20 @@ void VrOverlay::Run()
 {
     while (!stop_) {
         if (!overlayReady_) {
+            if (reconnectBlockedUntilSteamVrExit_) {
+                if (!IsSteamVrProcessRunning()) {
+                    reconnectBlockedUntilSteamVrExit_ = false;
+                    reconnectBlockLogged_ = false;
+                } else {
+                    if (diagnostics_ && !reconnectBlockLogged_) {
+                        diagnostics_->LogDebug(L"Waiting for SteamVR shutdown before reconnecting");
+                        reconnectBlockLogged_ = true;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                    continue;
+                }
+            }
+
             Initialize();
         }
 
@@ -471,6 +896,11 @@ bool VrOverlay::Initialize()
     if (!vr::VR_IsRuntimeInstalled()) {
         SetError(L"SteamVR runtime is not installed");
         std::this_thread::sleep_for(std::chrono::seconds(2));
+        return false;
+    }
+    if (!IsSteamVrProcessRunning()) {
+        SetError(L"SteamVR is not running");
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         return false;
     }
 
@@ -551,6 +981,9 @@ bool VrOverlay::Initialize()
         overlayImageFailureLogged_ = false;
     }
     manifestApplied_ = false;
+    manifestErrorLogged_ = false;
+    reconnectBlockedUntilSteamVrExit_ = false;
+    reconnectBlockLogged_ = false;
     if (diagnostics_) {
         diagnostics_->LogInfo(L"SteamVR overlay initialized");
     }
@@ -600,6 +1033,8 @@ void VrOverlay::ShutdownOpenVr()
     legacyFallbackReasonLogged_ = false;
     overlayHandle_ = 0;
     mainOverlayVisible_ = false;
+    manifestApplied_ = false;
+    manifestErrorLogged_ = false;
     hideByAngleVisible_ = false;
     mainOverlayFadeActive_ = false;
     mainOverlayFadeHideWhenDone_ = false;
@@ -618,8 +1053,17 @@ void VrOverlay::ShutdownOpenVr()
 
 void VrOverlay::Tick()
 {
-    if (!vr::VRSystem() || !vr::VROverlay()) {
+    if (!IsSteamVrProcessRunning()) {
         ShutdownOpenVr();
+        SetError(L"SteamVR is not running");
+        return;
+    }
+    if (!vr::VRSystem() || !vr::VROverlay()) {
+        reconnectBlockedUntilSteamVrExit_ = true;
+        ShutdownOpenVr();
+        return;
+    }
+    if (PollSystemEvents()) {
         return;
     }
 
@@ -801,6 +1245,37 @@ void VrOverlay::UpdateMainOverlayFade()
         }
         mainOverlayFadeHideWhenDone_ = false;
     }
+}
+
+bool VrOverlay::PollSystemEvents()
+{
+    if (!vr::VRSystem()) {
+        reconnectBlockedUntilSteamVrExit_ = true;
+        ShutdownOpenVr();
+        return true;
+    }
+
+    bool shutdownRequested = false;
+    vr::VREvent_t event{};
+    while (vr::VRSystem()->PollNextEvent(&event, sizeof(event))) {
+        if (event.eventType == vr::VREvent_Quit ||
+            event.eventType == vr::VREvent_DriverRequestedQuit) {
+            shutdownRequested = true;
+        }
+    }
+
+    if (!shutdownRequested) {
+        return false;
+    }
+
+    reconnectBlockedUntilSteamVrExit_ = true;
+    reconnectBlockLogged_ = false;
+    SetError(L"SteamVR is shutting down");
+    if (diagnostics_) {
+        diagnostics_->LogInfo(L"SteamVR shutdown requested; overlay disconnected");
+    }
+    ShutdownOpenVr();
+    return true;
 }
 
 void VrOverlay::PollEvents()
@@ -1206,23 +1681,53 @@ void VrOverlay::ApplyManifest()
     }
 
     const auto manifest = ExecutableDirectory() / L"app.vrmanifest";
-    if (!manifestApplied_ && std::filesystem::exists(manifest)) {
-        const auto manifestUtf8 = WideToUtf8(manifest.wstring());
-        vr::EVRApplicationError err = apps->AddApplicationManifest(manifestUtf8.c_str(), false);
-        if (err == vr::VRApplicationError_AppKeyAlreadyExists) {
-            vr::EVRApplicationError propertyError = vr::VRApplicationError_None;
-            const bool isDashboardOverlay = apps->GetApplicationPropertyBool(kAppKey, vr::VRApplicationProperty_IsDashboardOverlay_Bool, &propertyError);
-            if (propertyError != vr::VRApplicationError_None || !isDashboardOverlay) {
-                apps->RemoveApplicationManifest(manifestUtf8.c_str());
-                err = apps->AddApplicationManifest(manifestUtf8.c_str(), false);
-            }
+    if (!std::filesystem::exists(manifest)) {
+        return;
+    }
+
+    const bool installed = apps->IsApplicationInstalled(kAppKey);
+    bool isDashboardOverlay = false;
+    if (installed) {
+        vr::EVRApplicationError propertyError = vr::VRApplicationError_None;
+        isDashboardOverlay = apps->GetApplicationPropertyBool(
+            kAppKey,
+            vr::VRApplicationProperty_IsDashboardOverlay_Bool,
+            &propertyError) &&
+            propertyError == vr::VRApplicationError_None;
+    }
+
+    const bool currentPath = installed && RegisteredApplicationMatchesCurrentPath(apps, ExecutableDirectory());
+    if (installed && isDashboardOverlay && currentPath) {
+        if (!manifestApplied_ && diagnostics_) {
+            diagnostics_->LogDebug(L"OpenVR manifest already registered");
         }
-        if (err == vr::VRApplicationError_None || err == vr::VRApplicationError_AppKeyAlreadyExists) {
-            manifestApplied_ = true;
-            if (diagnostics_) {
-                diagnostics_->LogDebug(L"OpenVR manifest registered");
-            }
+        manifestApplied_ = true;
+        apps->IdentifyApplication(0, kAppKey);
+        return;
+    }
+
+    const auto manifestUtf8 = WideToUtf8(manifest.wstring());
+    if (installed) {
+        RemoveRegisteredApplicationManifest(apps, manifest);
+    }
+
+    vr::EVRApplicationError err = apps->AddApplicationManifest(manifestUtf8.c_str(), false);
+    if (err == vr::VRApplicationError_AppKeyAlreadyExists) {
+        RemoveRegisteredApplicationManifest(apps, manifest);
+        err = apps->AddApplicationManifest(manifestUtf8.c_str(), false);
+    }
+
+    if (err == vr::VRApplicationError_None ||
+        err == vr::VRApplicationError_AppKeyAlreadyExists) {
+        manifestApplied_ = true;
+        manifestErrorLogged_ = false;
+        apps->IdentifyApplication(0, kAppKey);
+        if (diagnostics_) {
+            diagnostics_->LogInfo(L"OpenVR manifest registered");
         }
+    } else if (diagnostics_ && !manifestErrorLogged_) {
+        manifestErrorLogged_ = true;
+        diagnostics_->LogWarning(L"AddApplicationManifest failed: " + ApplicationErrorToString(apps, err));
     }
 }
 

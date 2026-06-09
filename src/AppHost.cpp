@@ -48,6 +48,8 @@ void WriteUtf8File(const std::filesystem::path& path, const std::wstring& text)
     file.write(reinterpret_cast<const char*>(bom), sizeof(bom));
     const std::string utf8 = WideToUtf8(text);
     file.write(utf8.data(), static_cast<std::streamsize>(utf8.size()));
+    // re-check the stream after writing - the user opens the report straight away, so a
+    // half-written file is worse than a clear error.
     if (!file) {
         throw std::runtime_error("Failed to write support report file");
     }

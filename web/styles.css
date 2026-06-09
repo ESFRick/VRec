@@ -259,6 +259,50 @@ button { font: inherit; color: inherit; }
 .select__chev { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-3); pointer-events: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .select option { background: var(--win-bg); color: var(--text-1); }
 
+.check {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 32px;
+  cursor: pointer;
+}
+.check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.check__box {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-2);
+  border-radius: 5px;
+  background: var(--inset);
+  box-shadow: inset 0 1px 1px rgba(0,0,0,.16);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.check:hover .check__box {
+  border-color: var(--text-3);
+}
+.check input:checked + .check__box {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-weak);
+}
+.check input:checked + .check__box::after {
+  content: "";
+  display: block;
+  width: 9px;
+  height: 5px;
+  margin: 4px 0 0 4px;
+  border-left: 2px solid #0b0f14;
+  border-bottom: 2px solid #0b0f14;
+  transform: rotate(-45deg);
+}
+.check input:focus-visible + .check__box {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-weak);
+}
+
 .seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--inset); border: 1px solid var(--border-2); border-radius: var(--r-ctrl); }
 .seg__btn {
   min-width: 64px; height: 26px; padding: 0 14px;
