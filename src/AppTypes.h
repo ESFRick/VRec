@@ -15,10 +15,19 @@ enum class OverlayPlacement {
     WristOutside
 };
 
+enum class OverlayPanelPage {
+    Recording,
+    Settings
+};
+
 enum class RecorderState {
     Idle,
     Recording
 };
+
+inline constexpr int kOverlayHideAngleDefaultDegrees = 80;
+inline constexpr int kOverlayHideAngleMinDegrees = 45;
+inline constexpr int kOverlayHideAngleMaxDegrees = 120;
 
 enum class ObsConnState {
     Disconnected,
@@ -40,6 +49,7 @@ struct ObsSettings {
 struct OverlaySettings {
     Hand hand = Hand::Right;
     OverlayPlacement placement = OverlayPlacement::WristOutside;
+    int hideAngleDegrees = kOverlayHideAngleDefaultDegrees;
 };
 
 struct AdvancedSettings {

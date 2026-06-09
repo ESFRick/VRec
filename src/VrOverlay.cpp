@@ -40,8 +40,7 @@ constexpr float kCursorOverlayWidthMeters = 0.014f;
 constexpr float kCursorLiftMeters = 0.008f;
 constexpr bool kDebugOverlayCheckerDefault = false;
 constexpr double kPi = 3.14159265358979323846;
-constexpr float kHideByAngleShowDot = 0.25881905f; // cos(75 deg)
-constexpr float kHideByAngleHideDot = 0.17364818f; // cos(80 deg)
+constexpr int kHideByAngleHysteresisDegrees = 5;
 constexpr auto kMainOverlayFadeDuration = std::chrono::milliseconds(80);
 
 
@@ -54,6 +53,36 @@ constexpr const wchar_t* kSteamRegistryWow64Key = L"Software\\WOW6432Node\\Valve
 RECT RecButtonRect()
 {
     return RECT{ 22, 62, 490, 236 };
+}
+
+RECT SettingsButtonRect()
+{
+    return RECT{ 458, 14, 492, 48 };
+}
+
+RECT SettingsBackButtonRect()
+{
+    return RECT{ 20, 16, 54, 50 };
+}
+
+RECT HideAngleMinusRect()
+{
+    return RECT{ 32, 118, 76, 162 };
+}
+
+RECT HideAnglePlusRect()
+{
+    return RECT{ 436, 118, 480, 162 };
+}
+
+RECT HideAngleSliderRect()
+{
+    return RECT{ 96, 124, 416, 156 };
+}
+
+RECT HideAngleResetRect()
+{
+    return RECT{ 352, 192, 480, 230 };
 }
 
 struct OverlayPose {
@@ -87,6 +116,21 @@ double DegToRad(double value)
 bool PtInRectPixels(const RECT& rect, float x, float y)
 {
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+int HideAngleFromSliderX(float x)
+{
+    const RECT slider = HideAngleSliderRect();
+    constexpr int padding = 10;
+    const int left = slider.left + padding;
+    const int right = slider.right - padding;
+    const float t = std::clamp((x - static_cast<float>(left)) / static_cast<float>(right - left), 0.0f, 1.0f);
+    const int raw = static_cast<int>(std::round(
+        kOverlayHideAngleMinDegrees +
+        t * (kOverlayHideAngleMaxDegrees - kOverlayHideAngleMinDegrees)));
+    constexpr int step = 5;
+    const int stepped = static_cast<int>(std::round(raw / static_cast<double>(step))) * step;
+    return std::clamp(stepped, kOverlayHideAngleMinDegrees, kOverlayHideAngleMaxDegrees);
 }
 
 float OverlayMouseYToPixels(float y)
@@ -796,6 +840,7 @@ bool VrOverlay::Start(
     const Settings& settings,
     Diagnostics* diagnostics,
     RecordingCommandCallback recordingCommand,
+    SettingsUpdateCallback settingsUpdateCommand,
     StatusProvider statusProvider)
 {
     {
@@ -803,6 +848,7 @@ bool VrOverlay::Start(
         settings_ = settings;
         diagnostics_ = diagnostics;
         recordingCommand_ = std::move(recordingCommand);
+        settingsUpdateCommand_ = std::move(settingsUpdateCommand);
         statusProvider_ = std::move(statusProvider);
     }
 
@@ -827,17 +873,22 @@ void VrOverlay::UpdateSettings(const Settings& settings)
     const bool pointerSettingsChanged =
         settings_.overlay.hand != settings.overlay.hand ||
         settings_.overlay.placement != settings.overlay.placement;
+    const bool visualSettingsChanged =
+        settings_.language != settings.language ||
+        settings_.overlay.hideAngleDegrees != settings.overlay.hideAngleDegrees;
 
     settings_ = settings;
-    attachDirty_ = true;
-    lastLegacyLeftTrigger_ = false;
-    lastLegacyRightTrigger_ = false;
-
     if (pointerSettingsChanged) {
+        attachDirty_ = true;
+        lastLegacyLeftTrigger_ = false;
+        lastLegacyRightTrigger_ = false;
         pointerPolicyLogged_ = false;
         steamVrStrictRayLogged_ = false;
         legacyStrictRayLogged_ = false;
         cursorTransformFailureLogged_ = false;
+    }
+    if (visualSettingsChanged) {
+        refreshState_.Reset();
     }
 }
 
@@ -979,6 +1030,7 @@ bool VrOverlay::Initialize()
         attachDirty_ = true;
         refreshState_.Reset();
         overlayImageFailureLogged_ = false;
+        overlayPage_ = OverlayPanelPage::Recording;
     }
     manifestApplied_ = false;
     manifestErrorLogged_ = false;
@@ -1013,6 +1065,7 @@ void VrOverlay::ShutdownOpenVr()
         std::scoped_lock lock(mutex_);
         refreshState_.Reset();
         overlayImageFailureLogged_ = false;
+        overlayPage_ = OverlayPanelPage::Recording;
     }
 
     cursorOverlayHandle_ = 0;
@@ -1076,9 +1129,15 @@ void VrOverlay::Tick()
     PollEvents();
     const StatusSnapshot status = statusProvider_ ? statusProvider_() : StatusSnapshot{};
     const Settings settings = SettingsSnapshot();
+    OverlayPanelPage panelPage = OverlayPanelPage::Recording;
+    {
+        std::scoped_lock lock(mutex_);
+        panelPage = overlayPage_;
+    }
     const OverlayVisualState visualState = MakeOverlayVisualState(
         status,
-        settings.language,
+        settings,
+        panelPage,
         DebugOverlayCheckerEnabled());
     bool shouldRender = false;
     {
@@ -1157,12 +1216,22 @@ void VrOverlay::UpdateMainOverlayVisibility()
     const vr::HmdVector3_t toHmd = NormalizeVector(Subtract(hmdPosition, overlayPosition));
     const float dot = Dot(OverlayFaceNormal(overlayWorld), toHmd);
 
+    const int hideAngle = std::clamp(
+        settings.overlay.hideAngleDegrees,
+        kOverlayHideAngleMinDegrees,
+        kOverlayHideAngleMaxDegrees);
+    const int showAngle = std::max(
+        kOverlayHideAngleMinDegrees,
+        hideAngle - kHideByAngleHysteresisDegrees);
+    const float hideDot = static_cast<float>(std::cos(DegToRad(hideAngle)));
+    const float showDot = static_cast<float>(std::cos(DegToRad(showAngle)));
+
     bool shouldBeVisible = hideByAngleVisible_;
     if (hideByAngleVisible_) {
-        if (dot < kHideByAngleHideDot) {
+        if (dot < hideDot) {
             shouldBeVisible = false;
         }
-    } else if (dot > kHideByAngleShowDot) {
+    } else if (dot > showDot) {
         shouldBeVisible = true;
     }
 
@@ -1599,16 +1668,13 @@ void VrOverlay::UpdateControllerInteraction()
         }
     }
 
-    if (best.clickDown &&
-        best.clickChanged &&
-        PtInRectPixels(RecButtonRect(), best.x, best.yTopLeft) &&
-        recordingCommand_) {
-        const StatusSnapshot status =
-            statusProvider_ ? statusProvider_() : StatusSnapshot{};
-        const bool accepted =
-            status.obsConnState == ObsConnState::Connected &&
-            recordingCommand_(
-                status.recorderState != RecorderState::Recording);
+    if (best.clickDown && best.clickChanged) {
+        const bool accepted = HandleOverlayClick(
+            best.x,
+            best.yTopLeft,
+            best.steamVrInput,
+            best.inputSource,
+            best.controller);
         if (!accepted) {
             return;
         }
@@ -1619,6 +1685,81 @@ void VrOverlay::UpdateControllerInteraction()
             vr::VRSystem()->TriggerHapticPulse(best.controller, 0, 600);
         }
     }
+}
+
+bool VrOverlay::SetOverlayPage(OverlayPanelPage page)
+{
+    {
+        std::scoped_lock lock(mutex_);
+        if (overlayPage_ == page) {
+            return false;
+        }
+        overlayPage_ = page;
+        refreshState_.Reset();
+    }
+    return true;
+}
+
+bool VrOverlay::ApplyHideAngleDegrees(int value)
+{
+    Settings updated = SettingsSnapshot();
+    const int normalized = std::clamp(
+        value,
+        kOverlayHideAngleMinDegrees,
+        kOverlayHideAngleMaxDegrees);
+    if (updated.overlay.hideAngleDegrees == normalized) {
+        return false;
+    }
+
+    updated.overlay.hideAngleDegrees = normalized;
+    if (settingsUpdateCommand_) {
+        return settingsUpdateCommand_(updated);
+    }
+
+    UpdateSettings(updated);
+    return true;
+}
+
+bool VrOverlay::HandleOverlayClick(float x, float y, bool, uint64_t, uint32_t)
+{
+    OverlayPanelPage page = OverlayPanelPage::Recording;
+    {
+        std::scoped_lock lock(mutex_);
+        page = overlayPage_;
+    }
+
+    if (page == OverlayPanelPage::Settings) {
+        if (PtInRectPixels(SettingsBackButtonRect(), x, y)) {
+            return SetOverlayPage(OverlayPanelPage::Recording);
+        }
+        if (PtInRectPixels(HideAngleResetRect(), x, y)) {
+            return ApplyHideAngleDegrees(kOverlayHideAngleDefaultDegrees);
+        }
+        if (PtInRectPixels(HideAngleMinusRect(), x, y)) {
+            return ApplyHideAngleDegrees(SettingsSnapshot().overlay.hideAngleDegrees - 5);
+        }
+        if (PtInRectPixels(HideAnglePlusRect(), x, y)) {
+            return ApplyHideAngleDegrees(SettingsSnapshot().overlay.hideAngleDegrees + 5);
+        }
+        if (PtInRectPixels(HideAngleSliderRect(), x, y)) {
+            return ApplyHideAngleDegrees(HideAngleFromSliderX(x));
+        }
+        return false;
+    }
+
+    if (PtInRectPixels(SettingsButtonRect(), x, y)) {
+        return SetOverlayPage(OverlayPanelPage::Settings);
+    }
+
+    if (PtInRectPixels(RecButtonRect(), x, y) && recordingCommand_) {
+        const StatusSnapshot status =
+            statusProvider_ ? statusProvider_() : StatusSnapshot{};
+        return status.obsConnState == ObsConnState::Connected &&
+            recordingCommand_(
+                status.recorderState != RecorderState::Recording);
+    }
+
+    return false;
 }
 
 void VrOverlay::HideCursorOverlay()
@@ -1652,14 +1793,21 @@ void VrOverlay::RenderOverlay(const StatusSnapshot& status)
 {
     const Settings settings = SettingsSnapshot();
     const bool debugChecker = DebugOverlayCheckerEnabled();
+    OverlayPanelPage panelPage = OverlayPanelPage::Recording;
+    {
+        std::scoped_lock lock(mutex_);
+        panelPage = overlayPage_;
+    }
     const OverlayVisualState visualState = MakeOverlayVisualState(
         status,
-        settings.language,
+        settings,
+        panelPage,
         debugChecker);
     if (renderer_.Render(
             overlayHandle_,
             status,
-            settings.language,
+            settings,
+            panelPage,
             debugChecker,
             diagnostics_)) {
         std::scoped_lock lock(mutex_);

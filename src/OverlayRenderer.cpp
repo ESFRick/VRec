@@ -33,6 +33,36 @@ constexpr COLORREF Inset = RGB(19, 18, 16);
 constexpr COLORREF Border = RGB(61, 58, 54);
 } // namespace color
 
+RECT GearButtonRect()
+{
+    return RECT{ 458, 14, 492, 48 };
+}
+
+RECT SettingsBackButtonRect()
+{
+    return RECT{ 20, 16, 54, 50 };
+}
+
+RECT HideAngleMinusRect()
+{
+    return RECT{ 32, 118, 76, 162 };
+}
+
+RECT HideAnglePlusRect()
+{
+    return RECT{ 436, 118, 480, 162 };
+}
+
+RECT HideAngleSliderRect()
+{
+    return RECT{ 96, 124, 416, 156 };
+}
+
+RECT HideAngleResetRect()
+{
+    return RECT{ 352, 192, 480, 230 };
+}
+
 enum class PanelState {
     Ready,
     Recording,
@@ -58,8 +88,29 @@ public:
     GdiObject(const GdiObject&) = delete;
     GdiObject& operator=(const GdiObject&) = delete;
 
+    GdiObject(GdiObject&& other) noexcept
+        : handle_(std::exchange(other.handle_, nullptr))
+    {
+    }
+
+    GdiObject& operator=(GdiObject&& other) noexcept
+    {
+        if (this != &other) {
+            reset(std::exchange(other.handle_, nullptr));
+        }
+        return *this;
+    }
+
     HGDIOBJ get() const { return handle_; }
     explicit operator bool() const { return handle_ != nullptr; }
+
+    void reset(HGDIOBJ handle = nullptr)
+    {
+        if (handle_ && handle_ != handle) {
+            DeleteObject(handle_);
+        }
+        handle_ = handle;
+    }
 
 private:
     HGDIOBJ handle_ = nullptr;
@@ -250,7 +301,7 @@ PanelState GetPanelState(const StatusSnapshot& status)
     return PanelState::Offline;
 }
 
-bool DrawPanel(
+bool DrawRecordingPanel(
     HDC dc,
     const StatusSnapshot& status,
     Language language,
@@ -311,7 +362,7 @@ bool DrawPanel(
     SetTextColor(dc, color::TextHigh);
     DrawTextW(dc, L"Rec", -1, &brand, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    constexpr int chipRight = 490;
+    constexpr int chipRight = 446;
     constexpr int chipCenterY = 32;
     constexpr int chipHeight = 26;
     constexpr int chipPadding = 11;
@@ -485,13 +536,188 @@ bool DrawPanel(
             &hintRect,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
+
+    const RECT gear = GearButtonRect();
+    DrawRoundedRect(dc, gear, 8, color::Panel, color::PanelEdge, 1);
+
+    GdiObject gearFont = MakeFont(-24, FW_NORMAL, L"Segoe UI Symbol");
+    if (!gearFont) {
+        gearFont = MakeFont(-24, FW_NORMAL, L"Segoe UI");
+    }
+    if (gearFont) {
+        SelectObject(dc, gearFont.get());
+        SetTextColor(dc, color::TextMid);
+        RECT gearGlyph{ gear.left, gear.top - 1, gear.right, gear.bottom - 1 };
+        DrawTextW(
+            dc,
+            L"\u2699",
+            -1,
+            &gearGlyph,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
     return true;
+}
+
+void DrawSlider(HDC dc, const RECT& track, int value)
+{
+    constexpr int trackHeight = 6;
+    const int centerY = (track.top + track.bottom) / 2;
+    const int trackLeft = track.left + 10;
+    const int trackRight = track.right - 10;
+    const int range = kOverlayHideAngleMaxDegrees - kOverlayHideAngleMinDegrees;
+    const double t = static_cast<double>(value - kOverlayHideAngleMinDegrees) / static_cast<double>(range);
+    const int knobX = static_cast<int>(trackLeft + (trackRight - trackLeft) * std::clamp(t, 0.0, 1.0) + 0.5);
+
+    DrawRoundedRect(
+        dc,
+        RECT{ trackLeft, centerY - trackHeight / 2, trackRight, centerY + trackHeight / 2 },
+        5,
+        color::Inset,
+        color::Border,
+        1);
+    DrawRoundedRect(
+        dc,
+        RECT{ trackLeft, centerY - trackHeight / 2, knobX, centerY + trackHeight / 2 },
+        5,
+        color::Accent,
+        color::Accent,
+        0);
+    DrawRoundedRect(
+        dc,
+        RECT{ knobX - 8, centerY - 13, knobX + 8, centerY + 13 },
+        8,
+        color::TextHigh,
+        color::TextHigh,
+        0);
+}
+
+bool DrawSettingsPanel(
+    HDC dc,
+    const Settings& settings,
+    Diagnostics* diagnostics)
+{
+    GdiObject titleFont = MakeFont(-21, FW_BOLD, L"Segoe UI");
+    GdiObject labelFont = MakeFont(-20, FW_SEMIBOLD, L"Segoe UI");
+    GdiObject valueFont = MakeFont(-28, FW_BOLD, L"Segoe UI");
+    GdiObject buttonFont = MakeFont(-18, FW_SEMIBOLD, L"Segoe UI");
+    if (!titleFont || !labelFont || !valueFont || !buttonFont) {
+        if (diagnostics) {
+            diagnostics->LogWarning(L"Overlay settings font creation failed");
+        }
+        return false;
+    }
+
+    const bool russian = settings.language == Language::Russian;
+    DrawRoundedRect(
+        dc,
+        RECT{0, 0, OverlayRenderer::Width, OverlayRenderer::Height},
+        18,
+        color::Panel,
+        color::Panel,
+        0);
+    {
+        DcSelection brushSelection(dc, GetStockObject(NULL_BRUSH));
+        GdiObject border(CreatePen(PS_SOLID, 1, color::PanelEdge));
+        DcSelection penSelection(dc, border.get());
+        RoundRect(
+            dc,
+            1,
+            1,
+            OverlayRenderer::Width - 1,
+            OverlayRenderer::Height - 1,
+            18,
+            18);
+    }
+
+    SetBkMode(dc, TRANSPARENT);
+
+    const RECT back = SettingsBackButtonRect();
+    DrawRoundedRect(dc, back, 8, color::Panel, color::PanelEdge, 1);
+    GdiObject backPen(CreatePen(PS_SOLID, 2, color::TextMid));
+    DcSelection backPenSelection(dc, backPen.get());
+    MoveToEx(dc, back.left + 21, back.top + 10, nullptr);
+    LineTo(dc, back.left + 11, back.top + 17);
+    LineTo(dc, back.left + 21, back.top + 24);
+    MoveToEx(dc, back.left + 12, back.top + 17, nullptr);
+    LineTo(dc, back.right - 10, back.top + 17);
+
+    SelectObject(dc, titleFont.get());
+    SetTextColor(dc, color::TextHigh);
+    RECT titleRect{ 66, 16, 320, 50 };
+    DrawTextW(
+        dc,
+        russian ? L"Настройки" : L"Settings",
+        -1,
+        &titleRect,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    SelectObject(dc, labelFont.get());
+    SetTextColor(dc, color::TextMid);
+    RECT labelRect{ 32, 78, 250, 110 };
+    DrawTextW(
+        dc,
+        russian ? L"Угол скрытия" : L"Hide angle",
+        -1,
+        &labelRect,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    SelectObject(dc, valueFont.get());
+    SetTextColor(dc, color::Accent);
+    std::wstring value = std::to_wstring(settings.overlay.hideAngleDegrees) + L"°";
+    RECT valueRect{ 320, 74, 480, 112 };
+    DrawTextW(
+        dc,
+        value.c_str(),
+        -1,
+        &valueRect,
+        DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+
+    const RECT minus = HideAngleMinusRect();
+    const RECT plus = HideAnglePlusRect();
+    DrawRoundedRect(dc, minus, 10, color::Inset, color::Border, 1);
+    DrawRoundedRect(dc, plus, 10, color::Inset, color::Border, 1);
+    SelectObject(dc, valueFont.get());
+    SetTextColor(dc, color::TextHigh);
+    RECT minusText = minus;
+    RECT plusText = plus;
+    DrawTextW(dc, L"−", -1, &minusText, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(dc, L"+", -1, &plusText, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    DrawSlider(dc, HideAngleSliderRect(), settings.overlay.hideAngleDegrees);
+
+    const RECT reset = HideAngleResetRect();
+    DrawRoundedRect(dc, reset, 9, color::Panel, color::PanelEdge, 1);
+    SelectObject(dc, buttonFont.get());
+    SetTextColor(dc, color::TextHigh);
+    RECT resetText = reset;
+    DrawTextW(
+        dc,
+        russian ? L"Сброс" : L"Reset",
+        -1,
+        &resetText,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    return true;
+}
+
+bool DrawPanel(
+    HDC dc,
+    const StatusSnapshot& status,
+    const Settings& settings,
+    OverlayPanelPage panelPage,
+    Diagnostics* diagnostics)
+{
+    if (panelPage == OverlayPanelPage::Settings) {
+        return DrawSettingsPanel(dc, settings, diagnostics);
+    }
+    return DrawRecordingPanel(dc, status, settings.language, diagnostics);
 }
 
 bool RenderPixels(
     std::vector<std::uint8_t>& output,
     const StatusSnapshot& status,
-    Language language,
+    const Settings& settings,
+    OverlayPanelPage panelPage,
     bool debugChecker,
     Diagnostics* diagnostics)
 {
@@ -541,7 +767,7 @@ bool RenderPixels(
 
     if (debugChecker) {
         DrawDebugChecker(dc.get());
-    } else if (!DrawPanel(dc.get(), status, language, diagnostics)) {
+    } else if (!DrawPanel(dc.get(), status, settings, panelPage, diagnostics)) {
         return false;
     }
 
@@ -581,7 +807,8 @@ OverlayRenderer::~OverlayRenderer() = default;
 bool OverlayRenderer::Render(
     std::uint64_t overlayHandle,
     const StatusSnapshot& status,
-    Language language,
+    const Settings& settings,
+    OverlayPanelPage panelPage,
     bool debugChecker,
     Diagnostics* diagnostics)
 {
@@ -593,7 +820,8 @@ bool OverlayRenderer::Render(
     if (!RenderPixels(
             impl_->pixels,
             status,
-            language,
+            settings,
+            panelPage,
             debugChecker,
             diagnostics)) {
         return false;

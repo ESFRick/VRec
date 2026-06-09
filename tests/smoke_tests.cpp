@@ -78,6 +78,7 @@ void TestSettingsRoundTrip(const std::filesystem::path& path, Diagnostics& log)
     settings.obsConfigured = true;
     settings.overlay.hand = Hand::Left;
     settings.overlay.placement = OverlayPlacement::UnderController;
+    settings.overlay.hideAngleDegrees = 95;
     settings.advanced.logLevel = L"debug";
     settings.advanced.closeToTray = false;
 
@@ -92,6 +93,7 @@ void TestSettingsRoundTrip(const std::filesystem::path& path, Diagnostics& log)
     Check(loaded.obsConfigured, L"OBS opt-in round-trips");
     Check(loaded.overlay.hand == Hand::Left, L"overlay hand round-trips");
     Check(loaded.overlay.placement == OverlayPlacement::UnderController, L"overlay placement round-trips");
+    Check(loaded.overlay.hideAngleDegrees == 95, L"hide angle round-trips");
     Check(loaded.advanced.logLevel == L"debug", L"log level round-trips");
     Check(!loaded.advanced.closeToTray, L"close-to-tray setting round-trips");
 
@@ -99,6 +101,7 @@ void TestSettingsRoundTrip(const std::filesystem::path& path, Diagnostics& log)
     Check(json.find("\"version\": 3") != std::string::npos, L"schema version is persisted");
     Check(json.find("\"obsConfigured\": true") != std::string::npos, L"OBS opt-in is persisted");
     Check(json.find("\"closeToTray\": false") != std::string::npos, L"close-to-tray setting is persisted");
+    Check(json.find("\"hideAngleDegrees\": 95") != std::string::npos, L"hide angle setting is persisted");
     Check(json.find("minimizeToTray") == std::string::npos, L"removed minimize-to-tray setting is not persisted");
     Check(json.find("outputFolder") == std::string::npos, L"legacy output folder is not persisted");
     Check(json.find("autoLaunch") == std::string::npos, L"legacy auto-launch is not persisted");
@@ -119,6 +122,7 @@ void TestSettingsMigration(const std::filesystem::path& path, Diagnostics& log)
   "obsPassword": "plain-text",
   "overlayHand": "left",
   "overlayPlacement": "underController",
+  "hideAngleDegrees": 500,
   "outputFolder": "C:\\ignored",
   "autoLaunch": true,
   "startWithSteamVR": true,
@@ -134,6 +138,7 @@ void TestSettingsMigration(const std::filesystem::path& path, Diagnostics& log)
     Check(loaded.obsConfigured, L"legacy OBS settings enable reconnect");
     Check(loaded.overlay.hand == Hand::Left, L"legacy hand is loaded");
     Check(loaded.overlay.placement == OverlayPlacement::UnderController, L"legacy placement is loaded");
+    Check(loaded.overlay.hideAngleDegrees == kOverlayHideAngleMaxDegrees, L"legacy hide angle is clamped");
     Check(loaded.advanced.closeToTray, L"missing close-to-tray setting defaults on");
 
     Check(store.Save(loaded), L"migrated settings save succeeds");
@@ -177,7 +182,7 @@ void TestWebBridgeCodec()
     WebBridgeCommand command;
     std::wstring error;
     const std::wstring message =
-        LR"({"type":"applySettings","host":"wrong.local","payload":{"language":"ru","obs":{"host":"nested.local","port":4460,"password":"p\"w"},"overlay":{"hand":"left","placement":"underController"},"advanced":{"logLevel":"debug","minimizeToTray":false,"closeToTray":false}}})";
+        LR"({"type":"applySettings","host":"wrong.local","payload":{"language":"ru","obs":{"host":"nested.local","port":4460,"password":"p\"w"},"overlay":{"hand":"left","placement":"underController","hideAngleDegrees":95},"advanced":{"logLevel":"debug","minimizeToTray":false,"closeToTray":false}}})";
 
     Check(ParseWebBridgeCommand(message, current, command, error), L"valid bridge command parses");
     Check(command.type == WebBridgeCommandType::ApplySettings, L"bridge command type is applySettings");
@@ -186,6 +191,7 @@ void TestWebBridgeCodec()
     Check(!command.settings.obsConfigured, L"changed OBS settings require a new connection test");
     Check(command.settings.language == Language::Russian, L"bridge parser reads language");
     Check(command.settings.overlay.hand == Hand::Left, L"bridge parser reads hand");
+    Check(command.settings.overlay.hideAngleDegrees == 95, L"bridge parser reads hide angle");
     Check(command.settings.advanced.logLevel == L"debug", L"bridge parser reads log level");
     Check(!command.settings.advanced.closeToTray, L"bridge parser reads close-to-tray setting");
 
@@ -287,14 +293,17 @@ void TestOverlayVisualState()
     status.lastError = L"OBS unavailable";
     status.recordingTime = std::chrono::seconds(1);
 
+    Settings settings;
+    settings.language = Language::English;
+
     const OverlayVisualState offline =
-        MakeOverlayVisualState(status, Language::English, false);
+        MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false);
 
     status.recordingTime = std::chrono::seconds(2);
     Check(
         !OverlayNeedsRender(
             offline,
-            MakeOverlayVisualState(status, Language::English, false),
+            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
             false),
         L"overlay ignores recording time changes");
 
@@ -302,7 +311,7 @@ void TestOverlayVisualState()
     Check(
         OverlayNeedsRender(
             offline,
-            MakeOverlayVisualState(status, Language::English, false),
+            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
             false),
         L"overlay detects OBS connection changes");
 
@@ -311,14 +320,14 @@ void TestOverlayVisualState()
     Check(
         OverlayNeedsRender(
             offline,
-            MakeOverlayVisualState(status, Language::English, false),
+            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
             false),
         L"overlay detects cleared errors");
 
     status.lastError = L"OBS unavailable";
     status.recorderState = RecorderState::Recording;
     const OverlayVisualState recording =
-        MakeOverlayVisualState(status, Language::English, false);
+        MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false);
     Check(
         OverlayNeedsRender(offline, recording, false),
         L"overlay detects recording start");
@@ -327,9 +336,24 @@ void TestOverlayVisualState()
     Check(
         OverlayNeedsRender(
             recording,
-            MakeOverlayVisualState(status, Language::English, false),
+            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
             false),
         L"overlay detects recording stop");
+
+    Check(
+        OverlayNeedsRender(
+            offline,
+            MakeOverlayVisualState(status, settings, OverlayPanelPage::Settings, false),
+            false),
+        L"overlay detects settings page changes");
+    settings.overlay.hideAngleDegrees = 95;
+    Check(
+        OverlayNeedsRender(
+            offline,
+            MakeOverlayVisualState(status, settings, OverlayPanelPage::Recording, false),
+            false),
+        L"overlay detects hide angle changes");
+    settings.overlay.hideAngleDegrees = kOverlayHideAngleDefaultDegrees;
 
     OverlayRefreshState refresh;
     const auto now = std::chrono::steady_clock::now();

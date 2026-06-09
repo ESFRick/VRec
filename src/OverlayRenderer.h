@@ -22,7 +22,8 @@ public:
     bool Render(
         std::uint64_t overlayHandle,
         const StatusSnapshot& status,
-        Language language,
+        const Settings& settings,
+        OverlayPanelPage panelPage,
         bool debugChecker,
         Diagnostics* diagnostics);
     void Reset();

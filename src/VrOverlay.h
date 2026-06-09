@@ -16,6 +16,7 @@
 class VrOverlay {
 public:
     using RecordingCommandCallback = std::function<bool(bool shouldRecord)>;
+    using SettingsUpdateCallback = std::function<bool(const Settings& settings)>;
     using StatusProvider = std::function<StatusSnapshot()>;
 
     VrOverlay() = default;
@@ -28,6 +29,7 @@ public:
         const Settings& settings,
         Diagnostics* diagnostics,
         RecordingCommandCallback recordingCommand,
+        SettingsUpdateCallback settingsUpdateCommand,
         StatusProvider statusProvider);
     void Stop();
     void UpdateSettings(const Settings& settings);
@@ -51,6 +53,9 @@ private:
     void PollEvents();
     bool InitializeInput();
     void UpdateControllerInteraction();
+    bool HandleOverlayClick(float x, float y, bool steamVrInput, uint64_t inputSource, uint32_t controller);
+    bool SetOverlayPage(OverlayPanelPage page);
+    bool ApplyHideAngleDegrees(int value);
     void HideCursorOverlay();
     void LogInputErrorOnce(const wchar_t* action, int error);
     void RenderOverlay(const StatusSnapshot& status);
@@ -63,6 +68,7 @@ private:
     Settings settings_;
     Diagnostics* diagnostics_ = nullptr;
     RecordingCommandCallback recordingCommand_;
+    SettingsUpdateCallback settingsUpdateCommand_;
     StatusProvider statusProvider_;
     std::thread worker_;
     std::atomic<bool> stop_{false};
@@ -111,6 +117,7 @@ private:
     float cursorX_ = 0.0f;
     float cursorY_ = 0.0f;
     bool hideByAngleVisible_ = true;
+    OverlayPanelPage overlayPage_ = OverlayPanelPage::Recording;
     bool mainOverlayFadeActive_ = false;
     bool mainOverlayFadeHideWhenDone_ = false;
     float mainOverlayAlpha_ = 1.0f;

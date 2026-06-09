@@ -158,6 +158,10 @@ bool ParseWebBridgeCommand(
             command.settings.overlay.placement = ParsePlacement(
                 ValueOr(overlay, "placement", std::string(PlacementName(currentSettings.overlay.placement))),
                 currentSettings.overlay.placement);
+            command.settings.overlay.hideAngleDegrees = std::clamp(
+                ValueOr(overlay, "hideAngleDegrees", currentSettings.overlay.hideAngleDegrees),
+                kOverlayHideAngleMinDegrees,
+                kOverlayHideAngleMaxDegrees);
 
             const json& advanced = ObjectOrEmpty(payload, "advanced");
             command.settings.advanced.logLevel = Utf8ToWide(
@@ -206,6 +210,7 @@ std::wstring EncodeSettingsMessage(const Settings& settings)
             { "overlay", {
                 { "hand", HandName(settings.overlay.hand) },
                 { "placement", PlacementName(settings.overlay.placement) },
+                { "hideAngleDegrees", settings.overlay.hideAngleDegrees },
             } },
             { "advanced", {
                 { "logLevel", WideToUtf8(settings.advanced.logLevel) },

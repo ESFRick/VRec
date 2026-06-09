@@ -110,7 +110,7 @@
   var settings = {
     language: "en",
     obs: { host: "127.0.0.1", port: 4455, password: "" },
-    overlay: { hand: "right", placement: "wristOutside" },
+    overlay: { hand: "right", placement: "wristOutside", hideAngleDegrees: 80 },
     advanced: { logLevel: "info", closeToTray: true }
   };
   var status = { obsConnState: "disconnected", lastError: "", recorderState: "idle", recordingSeconds: 0, log: [] };
@@ -170,7 +170,8 @@
       },
       overlay: {
         hand: s.overlay ? s.overlay.hand : "right",
-        placement: s.overlay ? s.overlay.placement : "wristOutside"
+        placement: s.overlay ? s.overlay.placement : "wristOutside",
+        hideAngleDegrees: s.overlay && typeof s.overlay.hideAngleDegrees === "number" ? s.overlay.hideAngleDegrees : 80
       },
       advanced: {
         logLevel: s.advanced ? s.advanced.logLevel : "info",

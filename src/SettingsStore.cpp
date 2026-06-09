@@ -111,6 +111,10 @@ void SettingsStore::Normalize(Settings& settings)
     if (settings.advanced.logLevel != L"debug" && settings.advanced.logLevel != L"info") {
         settings.advanced.logLevel = L"info";
     }
+    settings.overlay.hideAngleDegrees = std::clamp(
+        settings.overlay.hideAngleDegrees,
+        kOverlayHideAngleMinDegrees,
+        kOverlayHideAngleMaxDegrees);
 }
 
 Settings SettingsStore::Load()
@@ -145,6 +149,7 @@ Settings SettingsStore::Load()
         settings.overlay.placement = ParsePlacement(
             ValueOr(document, "overlayPlacement", std::string(PlacementName(settings.overlay.placement))),
             settings.overlay.placement);
+        settings.overlay.hideAngleDegrees = ValueOr(document, "hideAngleDegrees", settings.overlay.hideAngleDegrees);
         settings.advanced.logLevel = Utf8ToWide(ValueOr(document, "logLevel", WideToUtf8(settings.advanced.logLevel)));
         settings.advanced.closeToTray = ValueOr(document, "closeToTray", settings.advanced.closeToTray);
     } catch (const json::exception&) {
@@ -179,6 +184,7 @@ bool SettingsStore::Save(const Settings& settings)
             { "obsConfigured", normalized.obsConfigured },
             { "overlayHand", HandName(normalized.overlay.hand) },
             { "overlayPlacement", PlacementName(normalized.overlay.placement) },
+            { "hideAngleDegrees", normalized.overlay.hideAngleDegrees },
             { "logLevel", WideToUtf8(normalized.advanced.logLevel) },
             { "closeToTray", normalized.advanced.closeToTray },
         };

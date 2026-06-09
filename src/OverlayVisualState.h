@@ -12,6 +12,8 @@ struct OverlayVisualState {
     ObsConnState obsConnState = ObsConnState::Disconnected;
     std::wstring error;
     Language language = Language::English;
+    OverlayPanelPage panelPage = OverlayPanelPage::Recording;
+    int hideAngleDegrees = kOverlayHideAngleDefaultDegrees;
     bool debugChecker = false;
 };
 
@@ -24,12 +26,16 @@ inline bool operator==(
                left.obsConnState,
                left.error,
                left.language,
+               left.panelPage,
+               left.hideAngleDegrees,
                left.debugChecker) ==
         std::tie(
                right.recorderState,
                right.obsConnState,
                right.error,
                right.language,
+               right.panelPage,
+               right.hideAngleDegrees,
                right.debugChecker);
 }
 
@@ -42,14 +48,17 @@ inline bool operator!=(
 
 inline OverlayVisualState MakeOverlayVisualState(
     const StatusSnapshot& status,
-    Language language,
+    const Settings& settings,
+    OverlayPanelPage panelPage,
     bool debugChecker)
 {
     return {
         status.recorderState,
         status.obsConnState,
         status.lastError,
-        language,
+        settings.language,
+        panelPage,
+        settings.overlay.hideAngleDegrees,
         debugChecker,
     };
 }

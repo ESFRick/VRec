@@ -64,11 +64,11 @@ bool SettingsEqual(const Settings& a, const Settings& b)
 {
     return std::tie(a.version, a.language,
                a.obs.host, a.obs.port, a.obs.password, a.obsConfigured,
-               a.overlay.hand, a.overlay.placement,
+               a.overlay.hand, a.overlay.placement, a.overlay.hideAngleDegrees,
                a.advanced.logLevel, a.advanced.closeToTray)
         == std::tie(b.version, b.language,
                b.obs.host, b.obs.port, b.obs.password, b.obsConfigured,
-               b.overlay.hand, b.overlay.placement,
+               b.overlay.hand, b.overlay.placement, b.overlay.hideAngleDegrees,
                b.advanced.logLevel, b.advanced.closeToTray);
 }
 
@@ -102,6 +102,9 @@ bool AppHost::Initialize()
             return shouldRecord
                 ? StartRecording()
                 : StopRecording();
+        },
+        [this](const Settings& updated) {
+            return ApplySettings(updated);
         },
         [this]() { return Status(); });
     return true;
@@ -241,6 +244,7 @@ std::filesystem::path AppHost::ExportSupportReport()
                     << L"OBS password set: " << BoolEnabled(!settings.obs.password.empty()) << L"\n"
                     << L"Overlay hand: " << ToDisplayString(settings.overlay.hand) << L"\n"
                     << L"Overlay placement: " << ToDisplayString(settings.overlay.placement) << L"\n"
+                    << L"Hide angle degrees: " << settings.overlay.hideAngleDegrees << L"\n"
                     << L"Close to tray: " << BoolEnabled(settings.advanced.closeToTray) << L"\n";
 
     std::wstringstream log;
