@@ -146,6 +146,7 @@ Settings SettingsStore::Load()
             ValueOr(document, "overlayPlacement", std::string(PlacementName(settings.overlay.placement))),
             settings.overlay.placement);
         settings.advanced.logLevel = Utf8ToWide(ValueOr(document, "logLevel", WideToUtf8(settings.advanced.logLevel)));
+        settings.advanced.closeToTray = ValueOr(document, "closeToTray", settings.advanced.closeToTray);
     } catch (const json::exception&) {
         if (diagnostics_) {
             diagnostics_->LogWarning(L"Settings parse failed; using defaults");
@@ -179,6 +180,7 @@ bool SettingsStore::Save(const Settings& settings)
             { "overlayHand", HandName(normalized.overlay.hand) },
             { "overlayPlacement", PlacementName(normalized.overlay.placement) },
             { "logLevel", WideToUtf8(normalized.advanced.logLevel) },
+            { "closeToTray", normalized.advanced.closeToTray },
         };
 
         std::ofstream file(path_, std::ios::binary | std::ios::trunc);

@@ -331,8 +331,10 @@ void WebView2Ui::HandleWebMessage(const std::wstring& json)
         break;
     }
     case WebBridgeCommandType::WindowMinimize:
+        HandleWindowMinimize();
+        break;
     case WebBridgeCommandType::WindowClose:
-        HideToTray();
+        HandleWindowClose();
         break;
     case WebBridgeCommandType::WindowDragStart:
         ReleaseCapture();
@@ -459,6 +461,28 @@ void WebView2Ui::CancelTestConnection()
     ++testGeneration_;
     testResultReady_ = false;
     testResultError_.clear();
+}
+
+bool WebView2Ui::CloseToTrayEnabled() const
+{
+    return host_.GetSettings().advanced.closeToTray;
+}
+
+void WebView2Ui::HandleWindowMinimize()
+{
+    if (!hwnd_) {
+        return;
+    }
+    ShowWindow(hwnd_, SW_MINIMIZE);
+}
+
+void WebView2Ui::HandleWindowClose()
+{
+    if (CloseToTrayEnabled()) {
+        HideToTray();
+        return;
+    }
+    ExitApplication();
 }
 
 void WebView2Ui::AddTrayIcon()
@@ -617,7 +641,6 @@ LRESULT WebView2Ui::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED) {
-            HideToTray();
             return 0;
         }
         ResizeWebView();
@@ -662,7 +685,7 @@ LRESULT WebView2Ui::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         if (exiting_) {
             ExitApplication();
         } else {
-            HideToTray();
+            HandleWindowClose();
         }
         return 0;
 

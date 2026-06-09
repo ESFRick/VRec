@@ -29,6 +29,7 @@
       "advanced.theme": "Theme", "advanced.dark": "Dark", "advanced.light": "Light",
       "advanced.logLevel": "Log level", "advanced.logLevelDesc": "Use debug only when reporting a problem.",
       "advanced.info": "Info", "advanced.debug": "Debug",
+      "advanced.closeToTray": "Close to tray",
       "advanced.sectionReset": "Reset",
       "advanced.resetTitle": "Reset all settings", "advanced.resetDesc": "Restore every setting to its default value.",
       "advanced.resetBtn": "Reset", "advanced.resetDone": "Settings reset to defaults.",
@@ -74,6 +75,7 @@
       "advanced.theme": "Тема", "advanced.dark": "Тёмная", "advanced.light": "Светлая",
       "advanced.logLevel": "Уровень логов", "advanced.logLevelDesc": "Отладочный — только при поиске проблемы.",
       "advanced.info": "Обычный", "advanced.debug": "Отладка",
+      "advanced.closeToTray": "Закрывать в трей",
       "advanced.sectionReset": "Сброс",
       "advanced.resetTitle": "Сбросить все настройки", "advanced.resetDesc": "Вернуть все параметры к значениям по умолчанию.",
       "advanced.resetBtn": "Сбросить", "advanced.resetDone": "Настройки сброшены к умолчанию.",
@@ -109,7 +111,7 @@
     language: "en",
     obs: { host: "127.0.0.1", port: 4455, password: "" },
     overlay: { hand: "right", placement: "wristOutside" },
-    advanced: { logLevel: "info" }
+    advanced: { logLevel: "info", closeToTray: true }
   };
   var status = { obsConnState: "disconnected", lastError: "", recorderState: "idle", recordingSeconds: 0, log: [] };
   var theme = "dark";       // UI-only preference (no native field) — persisted in localStorage
@@ -171,7 +173,8 @@
         placement: s.overlay ? s.overlay.placement : "wristOutside"
       },
       advanced: {
-        logLevel: s.advanced ? s.advanced.logLevel : "info"
+        logLevel: s.advanced ? s.advanced.logLevel : "info",
+        closeToTray: !s.advanced || s.advanced.closeToTray !== false
       }
     };
     $("#obsHost").value = settings.obs.host;
@@ -179,6 +182,7 @@
     $("#obsPass").value = settings.obs.password;
     $("#ovPlace").value = settings.overlay.placement;
     $("#advLog").value = settings.advanced.logLevel;
+    $("#advCloseToTray").checked = settings.advanced.closeToTray;
     applyLanguage(settings.language);
     validateHost(); validatePort();
     primingFromHost = false;
@@ -198,6 +202,7 @@
     $$("[data-i18n-title]").forEach(function (el) { el.setAttribute("title", t(el.getAttribute("data-i18n-title"))); });
     $("#obsPassToggle").setAttribute("aria-label", t($("#obsPassToggle").getAttribute("aria-pressed") === "true" ? "a11y.hidePassword" : "a11y.showPassword"));
     $("#advLog").value = settings.advanced.logLevel;
+    $("#advCloseToTray").checked = settings.advanced.closeToTray;
     $("#ovPlace").value = settings.overlay.placement;
     syncSeg("#advLang", settings.language);
     syncSeg("#advTheme", theme);
@@ -414,6 +419,7 @@
     settings.obs.password = $("#obsPass").value;
     settings.overlay.placement = $("#ovPlace").value;
     settings.advanced.logLevel = $("#advLog").value;
+    settings.advanced.closeToTray = $("#advCloseToTray").checked;
   }
 
   function pushSettings() {
@@ -512,6 +518,7 @@
     $("#advTheme").addEventListener("click", function (e) { var b = e.target.closest(".seg__btn"); if (b) applyTheme(b.getAttribute("data-val")); });
     segKeydown($("#advTheme"), function (v) { applyTheme(v); });
     $("#advLog").addEventListener("change", pushSettings);
+    $("#advCloseToTray").addEventListener("change", pushSettings);
     $("#advReset").addEventListener("click", function () {
       if (window.confirm(t("advanced.resetConfirm"))) window.vrec.resetSettings();
     });

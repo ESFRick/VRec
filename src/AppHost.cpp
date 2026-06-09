@@ -65,11 +65,11 @@ bool SettingsEqual(const Settings& a, const Settings& b)
     return std::tie(a.version, a.language,
                a.obs.host, a.obs.port, a.obs.password, a.obsConfigured,
                a.overlay.hand, a.overlay.placement,
-               a.advanced.logLevel)
+               a.advanced.logLevel, a.advanced.closeToTray)
         == std::tie(b.version, b.language,
                b.obs.host, b.obs.port, b.obs.password, b.obsConfigured,
                b.overlay.hand, b.overlay.placement,
-               b.advanced.logLevel);
+               b.advanced.logLevel, b.advanced.closeToTray);
 }
 
 } // namespace
@@ -240,7 +240,8 @@ std::filesystem::path AppHost::ExportSupportReport()
                     << L"OBS port: " << settings.obs.port << L"\n"
                     << L"OBS password set: " << BoolEnabled(!settings.obs.password.empty()) << L"\n"
                     << L"Overlay hand: " << ToDisplayString(settings.overlay.hand) << L"\n"
-                    << L"Overlay placement: " << ToDisplayString(settings.overlay.placement) << L"\n";
+                    << L"Overlay placement: " << ToDisplayString(settings.overlay.placement) << L"\n"
+                    << L"Close to tray: " << BoolEnabled(settings.advanced.closeToTray) << L"\n";
 
     std::wstringstream log;
     log << L"Diagnostics log\n";

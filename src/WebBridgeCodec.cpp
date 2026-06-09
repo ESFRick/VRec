@@ -162,6 +162,8 @@ bool ParseWebBridgeCommand(
             const json& advanced = ObjectOrEmpty(payload, "advanced");
             command.settings.advanced.logLevel = Utf8ToWide(
                 ValueOr(advanced, "logLevel", WideToUtf8(currentSettings.advanced.logLevel)));
+            command.settings.advanced.closeToTray = ValueOr(
+                advanced, "closeToTray", currentSettings.advanced.closeToTray);
         } else if (type == "testConnection") {
             command.type = WebBridgeCommandType::TestConnection;
             command.obsSettings.host = Utf8ToWide(ValueOr(payload, "host", WideToUtf8(currentSettings.obs.host)));
@@ -207,6 +209,7 @@ std::wstring EncodeSettingsMessage(const Settings& settings)
             } },
             { "advanced", {
                 { "logLevel", WideToUtf8(settings.advanced.logLevel) },
+                { "closeToTray", settings.advanced.closeToTray },
             } },
         } },
     };

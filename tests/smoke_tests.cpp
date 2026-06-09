@@ -79,6 +79,7 @@ void TestSettingsRoundTrip(const std::filesystem::path& path, Diagnostics& log)
     settings.overlay.hand = Hand::Left;
     settings.overlay.placement = OverlayPlacement::UnderController;
     settings.advanced.logLevel = L"debug";
+    settings.advanced.closeToTray = false;
 
     Check(store.Save(settings), L"settings save succeeds");
 
@@ -92,10 +93,13 @@ void TestSettingsRoundTrip(const std::filesystem::path& path, Diagnostics& log)
     Check(loaded.overlay.hand == Hand::Left, L"overlay hand round-trips");
     Check(loaded.overlay.placement == OverlayPlacement::UnderController, L"overlay placement round-trips");
     Check(loaded.advanced.logLevel == L"debug", L"log level round-trips");
+    Check(!loaded.advanced.closeToTray, L"close-to-tray setting round-trips");
 
     const std::string json = ReadFile(path);
     Check(json.find("\"version\": 3") != std::string::npos, L"schema version is persisted");
     Check(json.find("\"obsConfigured\": true") != std::string::npos, L"OBS opt-in is persisted");
+    Check(json.find("\"closeToTray\": false") != std::string::npos, L"close-to-tray setting is persisted");
+    Check(json.find("minimizeToTray") == std::string::npos, L"removed minimize-to-tray setting is not persisted");
     Check(json.find("outputFolder") == std::string::npos, L"legacy output folder is not persisted");
     Check(json.find("autoLaunch") == std::string::npos, L"legacy auto-launch is not persisted");
     Check(json.find("overlayScale") == std::string::npos, L"legacy overlay scale is not persisted");
@@ -130,6 +134,7 @@ void TestSettingsMigration(const std::filesystem::path& path, Diagnostics& log)
     Check(loaded.obsConfigured, L"legacy OBS settings enable reconnect");
     Check(loaded.overlay.hand == Hand::Left, L"legacy hand is loaded");
     Check(loaded.overlay.placement == OverlayPlacement::UnderController, L"legacy placement is loaded");
+    Check(loaded.advanced.closeToTray, L"missing close-to-tray setting defaults on");
 
     Check(store.Save(loaded), L"migrated settings save succeeds");
     const std::string migrated = ReadFile(path);
@@ -172,7 +177,7 @@ void TestWebBridgeCodec()
     WebBridgeCommand command;
     std::wstring error;
     const std::wstring message =
-        LR"({"type":"applySettings","host":"wrong.local","payload":{"language":"ru","obs":{"host":"nested.local","port":4460,"password":"p\"w"},"overlay":{"hand":"left","placement":"underController"},"advanced":{"logLevel":"debug"}}})";
+        LR"({"type":"applySettings","host":"wrong.local","payload":{"language":"ru","obs":{"host":"nested.local","port":4460,"password":"p\"w"},"overlay":{"hand":"left","placement":"underController"},"advanced":{"logLevel":"debug","minimizeToTray":false,"closeToTray":false}}})";
 
     Check(ParseWebBridgeCommand(message, current, command, error), L"valid bridge command parses");
     Check(command.type == WebBridgeCommandType::ApplySettings, L"bridge command type is applySettings");
@@ -182,6 +187,7 @@ void TestWebBridgeCodec()
     Check(command.settings.language == Language::Russian, L"bridge parser reads language");
     Check(command.settings.overlay.hand == Hand::Left, L"bridge parser reads hand");
     Check(command.settings.advanced.logLevel == L"debug", L"bridge parser reads log level");
+    Check(!command.settings.advanced.closeToTray, L"bridge parser reads close-to-tray setting");
 
     Check(!ParseWebBridgeCommand(L"{broken", current, command, error), L"malformed bridge JSON is rejected");
     Check(!error.empty(), L"malformed bridge JSON reports an error");

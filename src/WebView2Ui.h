@@ -51,6 +51,9 @@ private:
     void AddTrayIcon();
     void RemoveTrayIcon();
     void ShowTrayMinimizedNotification();
+    bool CloseToTrayEnabled() const;
+    void HandleWindowMinimize();
+    void HandleWindowClose();
     void HideToTray();
     void ShowFromTray();
     void ShowTrayMenu();

@@ -44,6 +44,7 @@ struct OverlaySettings {
 
 struct AdvancedSettings {
     std::wstring logLevel = L"info";
+    bool closeToTray = true;
 };
 
 struct Settings {
