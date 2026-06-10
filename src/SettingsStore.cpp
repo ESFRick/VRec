@@ -115,6 +115,26 @@ void SettingsStore::Normalize(Settings& settings)
         settings.overlay.hideAngleDegrees,
         kOverlayHideAngleMinDegrees,
         kOverlayHideAngleMaxDegrees);
+    settings.overlay.offsetX = std::clamp(
+        settings.overlay.offsetX,
+        kPositionOffsetMinMeters,
+        kPositionOffsetMaxMeters);
+    settings.overlay.offsetY = std::clamp(
+        settings.overlay.offsetY,
+        kPositionOffsetMinMeters,
+        kPositionOffsetMaxMeters);
+    settings.overlay.offsetZ = std::clamp(
+        settings.overlay.offsetZ,
+        kPositionOffsetMinMeters,
+        kPositionOffsetMaxMeters);
+    settings.overlay.scale = std::clamp(
+        settings.overlay.scale,
+        kPositionScaleMin,
+        kPositionScaleMax);
+    settings.overlay.yawDegrees = std::clamp(
+        settings.overlay.yawDegrees,
+        kPositionYawMinDegrees,
+        kPositionYawMaxDegrees);
 }
 
 Settings SettingsStore::Load()
@@ -150,6 +170,11 @@ Settings SettingsStore::Load()
             ValueOr(document, "overlayPlacement", std::string(PlacementName(settings.overlay.placement))),
             settings.overlay.placement);
         settings.overlay.hideAngleDegrees = ValueOr(document, "hideAngleDegrees", settings.overlay.hideAngleDegrees);
+        settings.overlay.offsetX = ValueOr(document, "positionOffsetX", settings.overlay.offsetX);
+        settings.overlay.offsetY = ValueOr(document, "positionOffsetY", settings.overlay.offsetY);
+        settings.overlay.offsetZ = ValueOr(document, "positionOffsetZ", settings.overlay.offsetZ);
+        settings.overlay.scale = ValueOr(document, "positionScale", settings.overlay.scale);
+        settings.overlay.yawDegrees = ValueOr(document, "positionYawDeg", settings.overlay.yawDegrees);
         settings.advanced.logLevel = Utf8ToWide(ValueOr(document, "logLevel", WideToUtf8(settings.advanced.logLevel)));
         settings.advanced.closeToTray = ValueOr(document, "closeToTray", settings.advanced.closeToTray);
     } catch (const json::exception&) {
@@ -185,6 +210,11 @@ bool SettingsStore::Save(const Settings& settings)
             { "overlayHand", HandName(normalized.overlay.hand) },
             { "overlayPlacement", PlacementName(normalized.overlay.placement) },
             { "hideAngleDegrees", normalized.overlay.hideAngleDegrees },
+            { "positionOffsetX", normalized.overlay.offsetX },
+            { "positionOffsetY", normalized.overlay.offsetY },
+            { "positionOffsetZ", normalized.overlay.offsetZ },
+            { "positionScale", normalized.overlay.scale },
+            { "positionYawDeg", normalized.overlay.yawDegrees },
             { "logLevel", WideToUtf8(normalized.advanced.logLevel) },
             { "closeToTray", normalized.advanced.closeToTray },
         };

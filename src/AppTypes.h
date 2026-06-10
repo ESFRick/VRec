@@ -17,7 +17,8 @@ enum class OverlayPlacement {
 
 enum class OverlayPanelPage {
     Recording,
-    Settings
+    Settings,
+    PositionEdit
 };
 
 enum class OverlayHotspot {
@@ -28,7 +29,9 @@ enum class OverlayHotspot {
     HideAngleMinus,
     HideAnglePlus,
     HideAngleSlider,
-    HideAngleReset
+    HideAngleReset,
+    EditPosition,
+    ResetPosition
 };
 
 enum class RecorderState {
@@ -39,6 +42,14 @@ enum class RecorderState {
 inline constexpr int kOverlayHideAngleDefaultDegrees = 80;
 inline constexpr int kOverlayHideAngleMinDegrees = 45;
 inline constexpr int kOverlayHideAngleMaxDegrees = 120;
+inline constexpr double kPositionOffsetMinMeters = -0.30;
+inline constexpr double kPositionOffsetMaxMeters = 0.30;
+inline constexpr double kPositionScaleDefault = 1.0;
+inline constexpr double kPositionScaleMin = 0.60;
+inline constexpr double kPositionScaleMax = 1.60;
+inline constexpr double kPositionYawDefaultDegrees = 0.0;
+inline constexpr double kPositionYawMinDegrees = -90.0;
+inline constexpr double kPositionYawMaxDegrees = 90.0;
 
 enum class ObsConnState {
     Disconnected,
@@ -61,6 +72,11 @@ struct OverlaySettings {
     Hand hand = Hand::Right;
     OverlayPlacement placement = OverlayPlacement::WristOutside;
     int hideAngleDegrees = kOverlayHideAngleDefaultDegrees;
+    double offsetX = 0.0;
+    double offsetY = 0.0;
+    double offsetZ = 0.0;
+    double scale = kPositionScaleDefault;
+    double yawDegrees = kPositionYawDefaultDegrees;
 };
 
 struct AdvancedSettings {

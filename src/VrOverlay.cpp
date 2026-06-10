@@ -30,6 +30,8 @@ constexpr const char* kActionManifestFile = "actions.json";
 constexpr const char* kActionSetPath = "/actions/vrec";
 constexpr const char* kPointerPoseActionPath = "/actions/vrec/in/pointer_pose";
 constexpr const char* kClickActionPath = "/actions/vrec/in/click";
+constexpr const char* kGripActionPath = "/actions/vrec/in/grip";
+constexpr const char* kScaleAxisActionPath = "/actions/vrec/in/scale_axis";
 constexpr const char* kHapticActionPath = "/actions/vrec/out/haptic";
 constexpr const char* kLeftHandPath = "/user/hand/left";
 constexpr const char* kRightHandPath = "/user/hand/right";
@@ -38,6 +40,14 @@ constexpr int kOverlayHeight = OverlayRenderer::Height;
 constexpr int kCursorOverlaySize = 64;
 constexpr float kCursorOverlayWidthMeters = 0.014f;
 constexpr float kCursorLiftMeters = 0.001f;
+constexpr float kOverlayBaseWidthMeters = 0.18f;
+constexpr float kEditGripThreshold = 0.50f;
+constexpr float kEditTriggerThreshold = 0.15f;
+constexpr float kEditScaleAxisDeadzone = 0.18f;
+constexpr float kEditAxisCrossTalkRatio = 0.35f;
+constexpr double kEditScaleAxisSensitivityPerSecond = 1.25;
+constexpr double kEditYawAxisSensitivityDegreesPerSecond = 70.0;
+constexpr auto kEditFrameFallbackInterval = std::chrono::milliseconds(20);
 constexpr bool kDebugOverlayCheckerDefault = false;
 constexpr double kPi = 3.14159265358979323846;
 constexpr int kHideByAngleHysteresisDegrees = 5;
@@ -82,7 +92,22 @@ RECT HideAngleSliderRect()
 
 RECT HideAngleResetRect()
 {
-    return RECT{ 352, 192, 480, 230 };
+    return RECT{ 32, 192, 140, 230 };
+}
+
+RECT SettingsEditPositionRect()
+{
+    return RECT{ 152, 192, 480, 230 };
+}
+
+RECT EditPositionRect()
+{
+    return RECT{ 152, 192, 322, 230 };
+}
+
+RECT ResetPositionRect()
+{
+    return RECT{ 334, 192, 480, 230 };
 }
 
 struct OverlayPose {
@@ -98,10 +123,18 @@ struct PointerHit {
     bool hit = false;
     bool clickDown = false;
     bool clickChanged = false;
+    bool gripKnown = false;
+    bool gripDown = false;
+    bool triggerKnown = false;
+    bool triggerDown = false;
+    bool scaleAxisKnown = false;
+    float scaleAxisX = 0.0f;
+    float scaleAxisY = 0.0f;
     bool steamVrInput = false;
     vr::VRInputValueHandle_t inputSource = vr::k_ulInvalidInputValueHandle;
     vr::TrackedDeviceIndex_t controller = vr::k_unTrackedDeviceIndexInvalid;
     vr::HmdVector3_t source{};
+    vr::HmdVector3_t direction{};
     vr::VROverlayIntersectionResults_t intersection{};
     float x = 0.0f;
     float yOpenVr = 0.0f;
@@ -140,6 +173,19 @@ OverlayHotspot HitTestOverlayHotspot(
         }
         if (PtInRectPixels(HideAngleSliderRect(), x, y)) {
             return OverlayHotspot::HideAngleSlider;
+        }
+        if (PtInRectPixels(SettingsEditPositionRect(), x, y)) {
+            return OverlayHotspot::EditPosition;
+        }
+        return OverlayHotspot::None;
+    }
+
+    if (page == OverlayPanelPage::PositionEdit) {
+        if (PtInRectPixels(SettingsBackButtonRect(), x, y)) {
+            return OverlayHotspot::SettingsBack;
+        }
+        if (PtInRectPixels(ResetPositionRect(), x, y)) {
+            return OverlayHotspot::ResetPosition;
         }
         return OverlayHotspot::None;
     }
@@ -703,6 +749,54 @@ vr::HmdVector3_t Subtract(const vr::HmdVector3_t& a, const vr::HmdVector3_t& b)
     return vr::HmdVector3_t{ a.v[0] - b.v[0], a.v[1] - b.v[1], a.v[2] - b.v[2] };
 }
 
+vr::HmdVector3_t Add(const vr::HmdVector3_t& a, const vr::HmdVector3_t& b)
+{
+    return vr::HmdVector3_t{ a.v[0] + b.v[0], a.v[1] + b.v[1], a.v[2] + b.v[2] };
+}
+
+vr::HmdVector3_t ScaleVector(const vr::HmdVector3_t& value, float scale)
+{
+    return vr::HmdVector3_t{ value.v[0] * scale, value.v[1] * scale, value.v[2] * scale };
+}
+
+bool IntersectRayWithPlane(
+    const vr::HmdVector3_t& source,
+    const vr::HmdVector3_t& direction,
+    const vr::HmdVector3_t& planePoint,
+    const vr::HmdVector3_t& planeNormal,
+    vr::HmdVector3_t& hit)
+{
+    const float denom = Dot(direction, planeNormal);
+    if (std::abs(denom) < 0.0001f) {
+        return false;
+    }
+
+    const float t = Dot(Subtract(planePoint, source), planeNormal) / denom;
+    if (t < 0.0f) {
+        return false;
+    }
+
+    hit = Add(source, ScaleVector(direction, t));
+    return true;
+}
+
+vr::HmdVector3_t WorldVectorToLocal(
+    const vr::HmdMatrix34_t& localToWorld,
+    const vr::HmdVector3_t& worldVector)
+{
+    return vr::HmdVector3_t{
+        localToWorld.m[0][0] * worldVector.v[0] +
+            localToWorld.m[1][0] * worldVector.v[1] +
+            localToWorld.m[2][0] * worldVector.v[2],
+        localToWorld.m[0][1] * worldVector.v[0] +
+            localToWorld.m[1][1] * worldVector.v[1] +
+            localToWorld.m[2][1] * worldVector.v[2],
+        localToWorld.m[0][2] * worldVector.v[0] +
+            localToWorld.m[1][2] * worldVector.v[1] +
+            localToWorld.m[2][2] * worldVector.v[2],
+    };
+}
+
 vr::HmdVector3_t PoseForward(const vr::HmdMatrix34_t& pose)
 {
     return NormalizeVector(vr::HmdVector3_t{
@@ -710,6 +804,28 @@ vr::HmdVector3_t PoseForward(const vr::HmdMatrix34_t& pose)
         -pose.m[1][2],
         -pose.m[2][2],
     });
+}
+
+bool ReadTrackedDevicePose(vr::TrackedDeviceIndex_t device, vr::HmdMatrix34_t& pose)
+{
+    if (!vr::VRSystem() ||
+        device == vr::k_unTrackedDeviceIndexInvalid ||
+        device >= vr::k_unMaxTrackedDeviceCount) {
+        return false;
+    }
+
+    vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount]{};
+    vr::VRSystem()->GetDeviceToAbsoluteTrackingPose(
+        vr::TrackingUniverseStanding,
+        0.0f,
+        poses,
+        vr::k_unMaxTrackedDeviceCount);
+    if (!poses[device].bDeviceIsConnected || !poses[device].bPoseIsValid) {
+        return false;
+    }
+
+    pose = poses[device].mDeviceToAbsoluteTracking;
+    return true;
 }
 
 vr::HmdVector3_t CursorLiftDirection(const vr::HmdMatrix34_t& transform, const vr::HmdVector3_t& pointerSource)
@@ -764,16 +880,133 @@ bool IsBetterPointerHit(const PointerHit& candidate, const PointerHit& current)
 bool ComputeStrictOverlayHit(vr::VROverlayHandle_t overlayHandle, const vr::HmdMatrix34_t& pose, PointerHit& hit)
 {
     const vr::HmdVector3_t source = PoseTranslation(pose);
+    const vr::HmdVector3_t direction = PoseForward(pose);
     vr::VROverlayIntersectionResults_t result{};
-    if (!ComputeOverlayHit(overlayHandle, source, PoseForward(pose), &result)) {
+    if (!ComputeOverlayHit(overlayHandle, source, direction, &result)) {
         return false;
     }
 
     hit.hit = true;
     hit.source = source;
+    hit.direction = direction;
     hit.intersection = result;
     FillPointerHitCoordinates(hit);
     return true;
+}
+
+bool LegacyGripDown(const vr::VRControllerState_t& state)
+{
+    const bool gripButton =
+        (state.ulButtonPressed & vr::ButtonMaskFromId(vr::k_EButton_Grip)) != 0;
+    const float gripAxis = std::max(
+        std::abs(state.rAxis[2].x),
+        std::abs(state.rAxis[2].y));
+    return gripButton || gripAxis > kEditGripThreshold;
+}
+
+bool LegacyTriggerDown(const vr::VRControllerState_t& state)
+{
+    const bool triggerButton =
+        (state.ulButtonPressed & vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Trigger)) != 0;
+    return triggerButton || std::max(0.0f, state.rAxis[1].x) > kEditTriggerThreshold;
+}
+
+float ApplyAxisDeadzone(float value)
+{
+    const float magnitude = std::abs(value);
+    if (magnitude <= kEditScaleAxisDeadzone) {
+        return 0.0f;
+    }
+    const float normalized = (magnitude - kEditScaleAxisDeadzone) /
+        (1.0f - kEditScaleAxisDeadzone);
+    return std::copysign(std::clamp(normalized, 0.0f, 1.0f), value);
+}
+
+bool LegacyEditAxis(const vr::VRControllerState_t& state, float& axisX, float& axisY)
+{
+    // Most controllers expose thumbstick/trackpad on Axis0 in legacy OpenVR.
+    // Axis3/Axis4 are used as conservative fallbacks for runtimes that expose
+    // extra 2D controls there. Axis1 is trigger and Axis2 is often grip, so
+    // they are intentionally ignored to avoid scaling/rotating while grabbing.
+    constexpr int axisCandidates[] = { 0, 3, 4 };
+    int bestAxis = axisCandidates[0];
+    float bestMagnitude = 0.0f;
+    for (int axis : axisCandidates) {
+        const float x = ApplyAxisDeadzone(state.rAxis[axis].x);
+        const float y = ApplyAxisDeadzone(state.rAxis[axis].y);
+        const float magnitude = std::abs(x) + std::abs(y);
+        if (magnitude > bestMagnitude) {
+            bestMagnitude = magnitude;
+            bestAxis = axis;
+        }
+    }
+
+    axisX = ApplyAxisDeadzone(state.rAxis[bestAxis].x);
+    axisY = ApplyAxisDeadzone(state.rAxis[bestAxis].y);
+    return std::abs(axisX) > 0.0f || std::abs(axisY) > 0.0f;
+}
+
+void ReadSteamVrEditButtons(
+    vr::VRInputValueHandle_t sourceHandle,
+    uint64_t clickAction,
+    uint64_t gripAction,
+    uint64_t scaleAxisAction,
+    bool& triggerKnown,
+    bool& triggerDown,
+    bool& triggerChanged,
+    bool& gripKnown,
+    bool& gripDown,
+    bool& scaleAxisKnown,
+    float& scaleAxisX,
+    float& scaleAxisY,
+    bool& clickInactive)
+{
+    if (!vr::VRInput() || sourceHandle == vr::k_ulInvalidInputValueHandle) {
+        return;
+    }
+
+    if (clickAction != vr::k_ulInvalidActionHandle && clickAction != 0) {
+        vr::InputDigitalActionData_t clickData{};
+        const vr::EVRInputError clickError = vr::VRInput()->GetDigitalActionData(
+            clickAction,
+            &clickData,
+            sizeof(clickData),
+            sourceHandle);
+        if (clickError == vr::VRInputError_None && clickData.bActive) {
+            triggerKnown = true;
+            triggerDown = clickData.bState;
+            triggerChanged = clickData.bChanged;
+        } else if (clickError == vr::VRInputError_None) {
+            clickInactive = true;
+        }
+    }
+
+    if (gripAction != vr::k_ulInvalidActionHandle && gripAction != 0) {
+        vr::InputDigitalActionData_t gripData{};
+        const vr::EVRInputError gripError = vr::VRInput()->GetDigitalActionData(
+            gripAction,
+            &gripData,
+            sizeof(gripData),
+            sourceHandle);
+        if (gripError == vr::VRInputError_None && gripData.bActive) {
+            gripKnown = true;
+            gripDown = gripData.bState;
+        }
+    }
+
+    if (scaleAxisAction != vr::k_ulInvalidActionHandle && scaleAxisAction != 0) {
+        vr::InputAnalogActionData_t axisData{};
+        const vr::EVRInputError axisError = vr::VRInput()->GetAnalogActionData(
+            scaleAxisAction,
+            &axisData,
+            sizeof(axisData),
+            sourceHandle);
+        if (axisError == vr::VRInputError_None && axisData.bActive) {
+            scaleAxisKnown = true;
+            scaleAxisX = ApplyAxisDeadzone(axisData.x);
+            scaleAxisY = ApplyAxisDeadzone(axisData.y);
+        }
+    }
 }
 
 // These poses were tuned in-headset relative to the controller grip. The left-hand
@@ -804,6 +1037,55 @@ OverlayPose PresetPose(const Settings& settings)
     }
 
     return pose;
+}
+
+OverlaySettings ClampedOverlaySettings(OverlaySettings overlay)
+{
+    overlay.hideAngleDegrees = std::clamp(
+        overlay.hideAngleDegrees,
+        kOverlayHideAngleMinDegrees,
+        kOverlayHideAngleMaxDegrees);
+    overlay.offsetX = std::clamp(
+        overlay.offsetX,
+        kPositionOffsetMinMeters,
+        kPositionOffsetMaxMeters);
+    overlay.offsetY = std::clamp(
+        overlay.offsetY,
+        kPositionOffsetMinMeters,
+        kPositionOffsetMaxMeters);
+    overlay.offsetZ = std::clamp(
+        overlay.offsetZ,
+        kPositionOffsetMinMeters,
+        kPositionOffsetMaxMeters);
+    overlay.scale = std::clamp(
+        overlay.scale,
+        kPositionScaleMin,
+        kPositionScaleMax);
+    overlay.yawDegrees = std::clamp(
+        overlay.yawDegrees,
+        kPositionYawMinDegrees,
+        kPositionYawMaxDegrees);
+    return overlay;
+}
+
+OverlayPose EffectivePose(const Settings& settings)
+{
+    OverlayPose pose = PresetPose(settings);
+    const OverlaySettings overlay = ClampedOverlaySettings(settings.overlay);
+    pose.x += overlay.offsetX;
+    pose.y += overlay.offsetY;
+    pose.z += overlay.offsetZ;
+    pose.yawDeg += overlay.yawDegrees;
+    return pose;
+}
+
+float OverlayWidthMeters(const Settings& settings)
+{
+    const double scale = std::clamp(
+        settings.overlay.scale,
+        kPositionScaleMin,
+        kPositionScaleMax);
+    return static_cast<float>(kOverlayBaseWidthMeters * scale);
 }
 
 vr::HmdMatrix34_t MatrixFromPose(const OverlayPose& pose)
@@ -909,7 +1191,12 @@ void VrOverlay::UpdateSettings(const Settings& settings)
     std::scoped_lock lock(mutex_);
     const bool pointerSettingsChanged =
         settings_.overlay.hand != settings.overlay.hand ||
-        settings_.overlay.placement != settings.overlay.placement;
+        settings_.overlay.placement != settings.overlay.placement ||
+        settings_.overlay.offsetX != settings.overlay.offsetX ||
+        settings_.overlay.offsetY != settings.overlay.offsetY ||
+        settings_.overlay.offsetZ != settings.overlay.offsetZ ||
+        settings_.overlay.scale != settings.overlay.scale ||
+        settings_.overlay.yawDegrees != settings.overlay.yawDegrees;
     settings_ = settings;
     if (pointerSettingsChanged) {
         attachDirty_ = true;
@@ -1096,6 +1383,16 @@ void VrOverlay::ShutdownOpenVr()
         refreshState_.Reset();
         overlayImageFailureLogged_ = false;
         overlayPage_ = OverlayPanelPage::Recording;
+        positionDragActive_ = false;
+        positionScaleActive_ = false;
+        positionRotateActive_ = false;
+        lastEditGripDown_ = false;
+        lastEditScaleAxisActive_ = false;
+        lastEditRotateAxisActive_ = false;
+        lastEditScaleAxisAt_ = {};
+        lastEditRotateAxisAt_ = {};
+        editController_ = vr::k_unTrackedDeviceIndexInvalid;
+        editStartDragPlaneValid_ = false;
     }
 
     cursorOverlayHandle_ = 0;
@@ -1104,6 +1401,8 @@ void VrOverlay::ShutdownOpenVr()
     actionSetHandle_ = 0;
     pointerPoseAction_ = 0;
     clickAction_ = 0;
+    gripAction_ = 0;
+    scaleAxisAction_ = 0;
     hapticAction_ = 0;
     leftHandSource_ = 0;
     rightHandSource_ = 0;
@@ -1204,16 +1503,21 @@ void VrOverlay::AttachToHand()
         if (!attachDirty_ &&
             lastAttachedController_ == controller &&
             lastAttachedHand_ == settings.overlay.hand &&
-            lastAttachedPlacement_ == settings.overlay.placement) {
+            lastAttachedPlacement_ == settings.overlay.placement &&
+            lastAttachedOffsetX_ == settings.overlay.offsetX &&
+            lastAttachedOffsetY_ == settings.overlay.offsetY &&
+            lastAttachedOffsetZ_ == settings.overlay.offsetZ &&
+            lastAttachedScale_ == settings.overlay.scale &&
+            lastAttachedYawDegrees_ == settings.overlay.yawDegrees) {
             return;
         }
     }
 
-    const OverlayPose pose = PresetPose(settings);
+    const OverlayPose pose = EffectivePose(settings);
     const vr::HmdMatrix34_t transform = MatrixFromPose(pose);
 
     LogOverlayError(diagnostics_, L"SetOverlayTransformTrackedDeviceRelative", vr::VROverlay()->SetOverlayTransformTrackedDeviceRelative(overlayHandle_, controller, &transform));
-    LogOverlayError(diagnostics_, L"SetOverlayWidthInMeters", vr::VROverlay()->SetOverlayWidthInMeters(overlayHandle_, 0.18f));
+    LogOverlayError(diagnostics_, L"SetOverlayWidthInMeters", vr::VROverlay()->SetOverlayWidthInMeters(overlayHandle_, OverlayWidthMeters(settings)));
 
     {
         std::scoped_lock lock(mutex_);
@@ -1221,6 +1525,11 @@ void VrOverlay::AttachToHand()
         lastAttachedController_ = controller;
         lastAttachedHand_ = settings.overlay.hand;
         lastAttachedPlacement_ = settings.overlay.placement;
+        lastAttachedOffsetX_ = settings.overlay.offsetX;
+        lastAttachedOffsetY_ = settings.overlay.offsetY;
+        lastAttachedOffsetZ_ = settings.overlay.offsetZ;
+        lastAttachedScale_ = settings.overlay.scale;
+        lastAttachedYawDegrees_ = settings.overlay.yawDegrees;
     }
 }
 
@@ -1245,7 +1554,20 @@ void VrOverlay::UpdateMainOverlayVisibility()
         return;
     }
 
-    const vr::HmdMatrix34_t relativeOverlay = MatrixFromPose(PresetPose(settings));
+    OverlayPanelPage page = OverlayPanelPage::Recording;
+    {
+        std::scoped_lock lock(mutex_);
+        page = overlayPage_;
+    }
+    if (page == OverlayPanelPage::PositionEdit) {
+        if (!hideByAngleVisible_) {
+            hideByAngleVisible_ = true;
+            BeginMainOverlayFade(true);
+        }
+        return;
+    }
+
+    const vr::HmdMatrix34_t relativeOverlay = MatrixFromPose(EffectivePose(settings));
     const vr::HmdMatrix34_t overlayWorld = MultiplyTransforms(controllerPose.mDeviceToAbsoluteTracking, relativeOverlay);
     const vr::HmdVector3_t overlayPosition = PoseTranslation(overlayWorld);
     const vr::HmdVector3_t hmdPosition = PoseTranslation(hmdPose.mDeviceToAbsoluteTracking);
@@ -1442,15 +1764,18 @@ bool VrOverlay::InitializeInput()
         const char* path;
         uint64_t* handle;
         const wchar_t* action;
+        bool required;
     };
 
     InputHandleRequest requests[] = {
-        { kActionSetPath, &actionSetHandle_, L"GetActionSetHandle /actions/vrec" },
-        { kPointerPoseActionPath, &pointerPoseAction_, L"GetActionHandle pointer_pose" },
-        { kClickActionPath, &clickAction_, L"GetActionHandle click" },
-        { kHapticActionPath, &hapticAction_, L"GetActionHandle haptic" },
-        { kLeftHandPath, &leftHandSource_, L"GetInputSourceHandle left hand" },
-        { kRightHandPath, &rightHandSource_, L"GetInputSourceHandle right hand" },
+        { kActionSetPath, &actionSetHandle_, L"GetActionSetHandle /actions/vrec", true },
+        { kPointerPoseActionPath, &pointerPoseAction_, L"GetActionHandle pointer_pose", true },
+        { kClickActionPath, &clickAction_, L"GetActionHandle click", true },
+        { kGripActionPath, &gripAction_, L"GetActionHandle grip", false },
+        { kScaleAxisActionPath, &scaleAxisAction_, L"GetActionHandle scale_axis", false },
+        { kHapticActionPath, &hapticAction_, L"GetActionHandle haptic", true },
+        { kLeftHandPath, &leftHandSource_, L"GetInputSourceHandle left hand", true },
+        { kRightHandPath, &rightHandSource_, L"GetInputSourceHandle right hand", true },
     };
 
     for (const auto& request : requests) {
@@ -1465,8 +1790,11 @@ bool VrOverlay::InitializeInput()
         }
 
         if (error != vr::VRInputError_None || *request.handle == 0) {
-            LogInputErrorOnce(request.action, error);
-            return false;
+            if (request.required) {
+                LogInputErrorOnce(request.action, error);
+                return false;
+            }
+            *request.handle = 0;
         }
     }
 
@@ -1487,6 +1815,10 @@ void VrOverlay::UpdateControllerInteraction()
     const Hand pointerHand = attachedHand == Hand::Left ? Hand::Right : Hand::Left;
     const vr::VRInputValueHandle_t pointerSourceHandle = pointerHand == Hand::Left ? leftHandSource_ : rightHandSource_;
     const vr::ETrackedControllerRole pointerRole = pointerHand == Hand::Left ? vr::TrackedControllerRole_LeftHand : vr::TrackedControllerRole_RightHand;
+    vr::TrackedDeviceIndex_t pointerController = vr::k_unTrackedDeviceIndexInvalid;
+    if (vr::VRSystem()) {
+        pointerController = vr::VRSystem()->GetTrackedDeviceIndexForControllerRole(pointerRole);
+    }
 
     {
         std::scoped_lock lock(mutex_);
@@ -1506,6 +1838,17 @@ void VrOverlay::UpdateControllerInteraction()
     bool inputPoseInactive = false;
     bool inputClickInactive = false;
     bool steamVrPoseAvailable = false;
+    bool editGripKnown = false;
+    bool editGripDown = false;
+    bool editTriggerKnown = false;
+    bool editTriggerDown = false;
+    bool editTriggerChanged = false;
+    bool editScaleAxisKnown = false;
+    float editScaleAxisX = 0.0f;
+    float editScaleAxisY = 0.0f;
+    bool editPointerRayKnown = false;
+    vr::HmdVector3_t editPointerRaySource{};
+    vr::HmdVector3_t editPointerRayDirection{};
 
     if (inputReady_ && vr::VRInput()) {
         vr::VRActiveActionSet_t actionSet{};
@@ -1537,30 +1880,43 @@ void VrOverlay::UpdateControllerInteraction()
                     inputPoseInactive = true;
                 } else {
                     steamVrPoseAvailable = true;
+                    editPointerRayKnown = true;
+                    editPointerRaySource = PoseTranslation(poseData.pose.mDeviceToAbsoluteTracking);
+                    editPointerRayDirection = PoseForward(poseData.pose.mDeviceToAbsoluteTracking);
                     if (diagnostics_ && !steamVrStrictRayLogged_) {
                         diagnostics_->LogDebug(L"Overlay hover uses SteamVR Input strict pointer ray");
                         steamVrStrictRayLogged_ = true;
                     }
 
+                    ReadSteamVrEditButtons(
+                        sourceHandle,
+                        clickAction_,
+                        gripAction_,
+                        scaleAxisAction_,
+                        editTriggerKnown,
+                        editTriggerDown,
+                        editTriggerChanged,
+                        editGripKnown,
+                        editGripDown,
+                        editScaleAxisKnown,
+                        editScaleAxisX,
+                        editScaleAxisY,
+                        inputClickInactive);
+
                     PointerHit candidate;
                     if (ComputeStrictOverlayHit(overlayHandle_, poseData.pose.mDeviceToAbsoluteTracking, candidate)) {
-                        vr::InputDigitalActionData_t clickData{};
-                        const vr::EVRInputError clickError = vr::VRInput()->GetDigitalActionData(
-                            clickAction_,
-                            &clickData,
-                            sizeof(clickData),
-                            sourceHandle);
-                        if (clickError != vr::VRInputError_None) {
-                            LogInputErrorOnce(L"GetDigitalActionData click", clickError);
-                        } else if (!clickData.bActive) {
-                            inputClickInactive = true;
-                        } else {
-                            candidate.clickDown = clickData.bState;
-                            candidate.clickChanged = clickData.bChanged;
-                        }
-
                         candidate.steamVrInput = true;
                         candidate.inputSource = sourceHandle;
+                        candidate.controller = pointerController;
+                        candidate.clickDown = editTriggerKnown && editTriggerDown;
+                        candidate.clickChanged = editTriggerKnown && editTriggerChanged;
+                        candidate.gripKnown = editGripKnown;
+                        candidate.gripDown = editGripDown;
+                        candidate.triggerKnown = editTriggerKnown;
+                        candidate.triggerDown = editTriggerDown;
+                        candidate.scaleAxisKnown = editScaleAxisKnown;
+                        candidate.scaleAxisX = editScaleAxisX;
+                        candidate.scaleAxisY = editScaleAxisY;
                         if (IsBetterPointerHit(candidate, best)) {
                             best = candidate;
                         }
@@ -1571,6 +1927,18 @@ void VrOverlay::UpdateControllerInteraction()
     }
 
     if (steamVrPoseAvailable && !best.hit) {
+        UpdatePositionEditInteraction(
+            pointerController,
+            false,
+            OverlayHotspot::None,
+            editGripKnown,
+            editGripDown,
+            editScaleAxisKnown,
+            editScaleAxisX,
+            editScaleAxisY,
+            editPointerRayKnown,
+            editPointerRaySource,
+            editPointerRayDirection);
         {
             std::scoped_lock lock(mutex_);
             cursorVisible_ = false;
@@ -1613,21 +1981,39 @@ void VrOverlay::UpdateControllerInteraction()
             }
 
             vr::VRControllerState_t state{};
-            vr::TrackedDevicePose_t pose{};
-            if (!vr::VRSystem()->GetControllerStateWithPose(vr::TrackingUniverseStanding, controller, &state, sizeof(state), &pose) ||
-                !pose.bPoseIsValid) {
+            if (!vr::VRSystem()->GetControllerState(controller, &state, sizeof(state))) {
                 lastTrigger = false;
                 return;
             }
 
-            const bool triggerDown =
-                (state.ulButtonPressed & vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Trigger)) != 0 ||
-                state.rAxis[1].x > 0.75f;
+            vr::HmdMatrix34_t pose{};
+            if (!ReadTrackedDevicePose(controller, pose)) {
+                lastTrigger = false;
+                return;
+            }
+
+            editPointerRayKnown = true;
+            editPointerRaySource = PoseTranslation(pose);
+            editPointerRayDirection = PoseForward(pose);
+
+            if (!editGripKnown) {
+                editGripKnown = true;
+                editGripDown = LegacyGripDown(state);
+            }
+            if (!editTriggerKnown) {
+                editTriggerKnown = true;
+                editTriggerDown = LegacyTriggerDown(state);
+            }
+            if (!editScaleAxisKnown) {
+                editScaleAxisKnown = LegacyEditAxis(state, editScaleAxisX, editScaleAxisY);
+            }
+
+            const bool triggerDown = editTriggerDown;
             const bool triggerChanged = triggerDown && !lastTrigger;
             lastTrigger = triggerDown;
 
             PointerHit candidate;
-            if (!ComputeStrictOverlayHit(overlayHandle_, pose.mDeviceToAbsoluteTracking, candidate)) {
+            if (!ComputeStrictOverlayHit(overlayHandle_, pose, candidate)) {
                 return;
             }
 
@@ -1639,6 +2025,13 @@ void VrOverlay::UpdateControllerInteraction()
             candidate.controller = controller;
             candidate.clickDown = triggerDown;
             candidate.clickChanged = triggerChanged;
+            candidate.gripKnown = editGripKnown;
+            candidate.gripDown = editGripDown;
+            candidate.triggerKnown = editTriggerKnown;
+            candidate.triggerDown = editTriggerDown;
+            candidate.scaleAxisKnown = editScaleAxisKnown;
+            candidate.scaleAxisX = editScaleAxisX;
+            candidate.scaleAxisY = editScaleAxisY;
             if (IsBetterPointerHit(candidate, best)) {
                 best = candidate;
             }
@@ -1649,6 +2042,18 @@ void VrOverlay::UpdateControllerInteraction()
     }
 
     if (!best.hit) {
+        UpdatePositionEditInteraction(
+            pointerController,
+            false,
+            OverlayHotspot::None,
+            editGripKnown,
+            editGripDown,
+            editScaleAxisKnown,
+            editScaleAxisX,
+            editScaleAxisY,
+            editPointerRayKnown,
+            editPointerRaySource,
+            editPointerRayDirection);
         {
             std::scoped_lock lock(mutex_);
             cursorVisible_ = false;
@@ -1672,6 +2077,19 @@ void VrOverlay::UpdateControllerInteraction()
         best.x,
         best.yTopLeft,
         currentStatus);
+
+    UpdatePositionEditInteraction(
+        best.controller,
+        true,
+        hoverHotspot,
+        best.gripKnown,
+        best.gripDown,
+        best.scaleAxisKnown,
+        best.scaleAxisX,
+        best.scaleAxisY,
+        true,
+        best.source,
+        best.direction);
 
     {
         std::scoped_lock lock(mutex_);
@@ -1744,13 +2162,19 @@ void VrOverlay::UpdateControllerInteraction()
 
 bool VrOverlay::SetOverlayPage(OverlayPanelPage page)
 {
+    bool leavingPositionEdit = false;
     {
         std::scoped_lock lock(mutex_);
         if (overlayPage_ == page) {
             return false;
         }
+        leavingPositionEdit = overlayPage_ == OverlayPanelPage::PositionEdit &&
+            page != OverlayPanelPage::PositionEdit;
         overlayPage_ = page;
         refreshState_.Reset();
+    }
+    if (leavingPositionEdit) {
+        StopPositionEditDrag(true);
     }
     return true;
 }
@@ -1773,6 +2197,348 @@ bool VrOverlay::ApplyHideAngleDegrees(int value)
 
     UpdateSettings(updated);
     return true;
+}
+
+bool VrOverlay::ResetOverlayPosition()
+{
+    Settings updated = SettingsSnapshot();
+    OverlaySettings overlay = updated.overlay;
+    overlay.offsetX = 0.0;
+    overlay.offsetY = 0.0;
+    overlay.offsetZ = 0.0;
+    overlay.scale = kPositionScaleDefault;
+    overlay.yawDegrees = kPositionYawDefaultDegrees;
+    overlay = ClampedOverlaySettings(overlay);
+    if (updated.overlay.offsetX == overlay.offsetX &&
+        updated.overlay.offsetY == overlay.offsetY &&
+        updated.overlay.offsetZ == overlay.offsetZ &&
+        updated.overlay.scale == overlay.scale &&
+        updated.overlay.yawDegrees == overlay.yawDegrees) {
+        return false;
+    }
+
+    updated.overlay = overlay;
+    if (settingsUpdateCommand_) {
+        return settingsUpdateCommand_(updated);
+    }
+
+    UpdateSettings(updated);
+    return true;
+}
+
+void VrOverlay::ApplyRuntimeOverlaySettings(const OverlaySettings& overlay)
+{
+    const OverlaySettings normalized = ClampedOverlaySettings(overlay);
+    std::scoped_lock lock(mutex_);
+    if (settings_.overlay.offsetX == normalized.offsetX &&
+        settings_.overlay.offsetY == normalized.offsetY &&
+        settings_.overlay.offsetZ == normalized.offsetZ &&
+        settings_.overlay.scale == normalized.scale &&
+        settings_.overlay.yawDegrees == normalized.yawDegrees) {
+        return;
+    }
+
+    settings_.overlay.offsetX = normalized.offsetX;
+    settings_.overlay.offsetY = normalized.offsetY;
+    settings_.overlay.offsetZ = normalized.offsetZ;
+    settings_.overlay.scale = normalized.scale;
+    settings_.overlay.yawDegrees = normalized.yawDegrees;
+    attachDirty_ = true;
+}
+
+void VrOverlay::CommitRuntimeOverlaySettings()
+{
+    const Settings snapshot = SettingsSnapshot();
+    if (settingsUpdateCommand_) {
+        settingsUpdateCommand_(snapshot);
+    } else {
+        UpdateSettings(snapshot);
+    }
+}
+
+void VrOverlay::StopPositionEditDrag(bool commit)
+{
+    bool wasActive = false;
+    {
+        std::scoped_lock lock(mutex_);
+        wasActive = positionDragActive_ || positionScaleActive_ || positionRotateActive_;
+        positionDragActive_ = false;
+        positionScaleActive_ = false;
+        positionRotateActive_ = false;
+        lastEditGripDown_ = false;
+        lastEditScaleAxisActive_ = false;
+        lastEditRotateAxisActive_ = false;
+        lastEditScaleAxisAt_ = {};
+        lastEditRotateAxisAt_ = {};
+        editController_ = vr::k_unTrackedDeviceIndexInvalid;
+        editStartDragPlaneValid_ = false;
+    }
+    if (commit && wasActive) {
+        CommitRuntimeOverlaySettings();
+    }
+}
+
+void VrOverlay::UpdatePositionEditInteraction(
+    uint32_t pointerController,
+    bool pointerHitsPanel,
+    OverlayHotspot hoverHotspot,
+    bool gripOverrideKnown,
+    bool gripOverrideDown,
+    bool scaleAxisKnown,
+    float scaleAxisX,
+    float scaleAxisY,
+    bool pointerRayKnown,
+    vr::HmdVector3_t pointerRaySource,
+    vr::HmdVector3_t pointerRayDirection)
+{
+    (void)pointerHitsPanel;
+
+    OverlayPanelPage page = OverlayPanelPage::Recording;
+    {
+        std::scoped_lock lock(mutex_);
+        page = overlayPage_;
+    }
+    if (page != OverlayPanelPage::PositionEdit) {
+        StopPositionEditDrag(true);
+        return;
+    }
+    if (!vr::VRSystem() || pointerController == vr::k_unTrackedDeviceIndexInvalid) {
+        StopPositionEditDrag(true);
+        return;
+    }
+
+    Settings settings = SettingsSnapshot();
+    const vr::ETrackedControllerRole attachedRole =
+        settings.overlay.hand == Hand::Left
+            ? vr::TrackedControllerRole_LeftHand
+            : vr::TrackedControllerRole_RightHand;
+    const vr::TrackedDeviceIndex_t attachedController =
+        vr::VRSystem()->GetTrackedDeviceIndexForControllerRole(attachedRole);
+    if (attachedController == vr::k_unTrackedDeviceIndexInvalid ||
+        !vr::VRSystem()->IsTrackedDeviceConnected(attachedController)) {
+        StopPositionEditDrag(true);
+        return;
+    }
+
+    vr::VRControllerState_t pointerState{};
+    if (!vr::VRSystem()->GetControllerState(
+            pointerController,
+            &pointerState,
+            sizeof(pointerState))) {
+        StopPositionEditDrag(true);
+        return;
+    }
+
+    vr::HmdMatrix34_t pointerPose{};
+    if (!pointerRayKnown && !ReadTrackedDevicePose(pointerController, pointerPose)) {
+        StopPositionEditDrag(true);
+        return;
+    }
+
+    vr::HmdMatrix34_t attachedPose{};
+    if (!ReadTrackedDevicePose(attachedController, attachedPose)) {
+        StopPositionEditDrag(true);
+        return;
+    }
+
+    float legacyScaleAxisX = 0.0f;
+    float legacyScaleAxisY = 0.0f;
+    if (!scaleAxisKnown && LegacyEditAxis(pointerState, legacyScaleAxisX, legacyScaleAxisY)) {
+        scaleAxisKnown = true;
+        scaleAxisX = legacyScaleAxisX;
+        scaleAxisY = legacyScaleAxisY;
+    }
+
+    const bool gripDown = gripOverrideKnown ? gripOverrideDown : LegacyGripDown(pointerState);
+    const bool transformArea = hoverHotspot == OverlayHotspot::None;
+    float scaleInput = scaleAxisY;
+    float rotateInput = scaleAxisX;
+    if (std::abs(rotateInput) < std::abs(scaleInput) * kEditAxisCrossTalkRatio) {
+        rotateInput = 0.0f;
+    }
+    if (std::abs(scaleInput) < std::abs(rotateInput) * kEditAxisCrossTalkRatio) {
+        scaleInput = 0.0f;
+    }
+    const bool scaleAxisActive = scaleAxisKnown && std::abs(scaleInput) > 0.0f && transformArea;
+    const bool rotateAxisActive = scaleAxisKnown && std::abs(rotateInput) > 0.0f && transformArea;
+    const auto now = std::chrono::steady_clock::now();
+    if (!pointerRayKnown) {
+        pointerRaySource = PoseTranslation(pointerPose);
+        pointerRayDirection = PoseForward(pointerPose);
+        pointerRayKnown = true;
+    }
+    const vr::HmdVector3_t pointerPosition = pointerRaySource;
+    const vr::HmdVector3_t attachedPosition = PoseTranslation(attachedPose);
+
+    bool commit = false;
+    bool dragActive = false;
+    bool scaleActive = false;
+    bool rotateActive = false;
+    bool runtimeUpdated = false;
+    double scaleDeltaSeconds = 0.0;
+    double rotateDeltaSeconds = 0.0;
+    uint32_t activeEditController = vr::k_unTrackedDeviceIndexInvalid;
+    OverlaySettings dragStartOverlay{};
+    vr::HmdVector3_t dragStartPointerPosition{};
+    vr::HmdVector3_t dragStartAttachedPosition{};
+    bool dragPlaneValid = false;
+    vr::HmdVector3_t dragPlanePoint{};
+    vr::HmdVector3_t dragPlaneNormal{};
+    vr::HmdVector3_t dragStartHitPosition{};
+    {
+        std::scoped_lock lock(mutex_);
+        dragActive = positionDragActive_;
+        scaleActive = positionScaleActive_;
+        rotateActive = positionRotateActive_;
+        if (gripDown && !lastEditGripDown_ && transformArea) {
+            positionDragActive_ = true;
+            dragActive = true;
+            editController_ = pointerController;
+            editStartOverlay_ = settings_.overlay;
+            editStartPointerPosition_ = pointerPosition;
+            editStartAttachedPosition_ = attachedPosition;
+            editStartDragPlaneValid_ = false;
+            if (pointerRayKnown) {
+                Settings startSettings = settings;
+                startSettings.overlay = editStartOverlay_;
+                const vr::HmdMatrix34_t overlayWorld = MultiplyTransforms(
+                    attachedPose,
+                    MatrixFromPose(EffectivePose(startSettings)));
+                editStartDragPlanePoint_ = PoseTranslation(overlayWorld);
+                editStartDragPlaneNormal_ = OverlayFaceNormal(overlayWorld);
+                if (IntersectRayWithPlane(
+                        pointerRaySource,
+                        pointerRayDirection,
+                        editStartDragPlanePoint_,
+                        editStartDragPlaneNormal_,
+                        editStartPointerHitPosition_)) {
+                    editStartDragPlaneValid_ = true;
+                }
+            }
+        }
+        if (!gripDown && lastEditGripDown_ && positionDragActive_) {
+            positionDragActive_ = false;
+            dragActive = false;
+            commit = true;
+        }
+
+        if (scaleAxisActive && !lastEditScaleAxisActive_) {
+            positionScaleActive_ = true;
+            scaleActive = true;
+            editController_ = pointerController;
+            lastEditScaleAxisAt_ = now - kEditFrameFallbackInterval;
+        }
+        if (!scaleAxisActive && lastEditScaleAxisActive_ && positionScaleActive_) {
+            positionScaleActive_ = false;
+            scaleActive = false;
+            commit = true;
+        }
+        if (scaleAxisActive && positionScaleActive_) {
+            scaleActive = true;
+            const auto delta = now - lastEditScaleAxisAt_;
+            scaleDeltaSeconds = std::chrono::duration<double>(delta).count();
+            scaleDeltaSeconds = std::clamp(scaleDeltaSeconds, 0.001, 0.075);
+            lastEditScaleAxisAt_ = now;
+        }
+
+        if (rotateAxisActive && !lastEditRotateAxisActive_) {
+            positionRotateActive_ = true;
+            rotateActive = true;
+            editController_ = pointerController;
+            lastEditRotateAxisAt_ = now - kEditFrameFallbackInterval;
+        }
+        if (!rotateAxisActive && lastEditRotateAxisActive_ && positionRotateActive_) {
+            positionRotateActive_ = false;
+            rotateActive = false;
+            commit = true;
+        }
+        if (rotateAxisActive && positionRotateActive_) {
+            rotateActive = true;
+            const auto delta = now - lastEditRotateAxisAt_;
+            rotateDeltaSeconds = std::chrono::duration<double>(delta).count();
+            rotateDeltaSeconds = std::clamp(rotateDeltaSeconds, 0.001, 0.075);
+            lastEditRotateAxisAt_ = now;
+        }
+
+        if (commit && (positionDragActive_ || positionScaleActive_ || positionRotateActive_)) {
+            commit = false;
+        }
+
+        lastEditGripDown_ = gripDown;
+        lastEditScaleAxisActive_ = scaleAxisActive;
+        lastEditRotateAxisActive_ = rotateAxisActive;
+        activeEditController = editController_;
+        dragStartOverlay = editStartOverlay_;
+        dragStartPointerPosition = editStartPointerPosition_;
+        dragStartAttachedPosition = editStartAttachedPosition_;
+        dragPlaneValid = editStartDragPlaneValid_;
+        dragPlanePoint = editStartDragPlanePoint_;
+        dragPlaneNormal = editStartDragPlaneNormal_;
+        dragStartHitPosition = editStartPointerHitPosition_;
+    }
+
+    if (dragActive && activeEditController == pointerController) {
+        vr::HmdVector3_t worldDelta{};
+        vr::HmdVector3_t currentHitPosition{};
+        if (dragPlaneValid &&
+            pointerRayKnown &&
+            IntersectRayWithPlane(
+                pointerRaySource,
+                pointerRayDirection,
+                dragPlanePoint,
+                dragPlaneNormal,
+                currentHitPosition)) {
+            worldDelta = Subtract(currentHitPosition, dragStartHitPosition);
+        } else {
+            const vr::HmdVector3_t startRelative = Subtract(
+                dragStartPointerPosition,
+                dragStartAttachedPosition);
+            const vr::HmdVector3_t currentRelative = Subtract(
+                pointerPosition,
+                attachedPosition);
+            worldDelta = Subtract(
+                currentRelative,
+                startRelative);
+        }
+        const vr::HmdVector3_t localDelta = WorldVectorToLocal(
+            attachedPose,
+            worldDelta);
+        OverlaySettings updated = SettingsSnapshot().overlay;
+        updated.offsetX = dragStartOverlay.offsetX + localDelta.v[0];
+        updated.offsetY = dragStartOverlay.offsetY + localDelta.v[1];
+        updated.offsetZ = dragStartOverlay.offsetZ + localDelta.v[2];
+        ApplyRuntimeOverlaySettings(updated);
+        runtimeUpdated = true;
+    }
+
+    if (scaleActive && activeEditController == pointerController && scaleDeltaSeconds > 0.0) {
+        OverlaySettings updated = SettingsSnapshot().overlay;
+        const double factor = std::exp(
+            static_cast<double>(scaleInput) *
+            kEditScaleAxisSensitivityPerSecond *
+            scaleDeltaSeconds);
+        updated.scale *= factor;
+        ApplyRuntimeOverlaySettings(updated);
+        runtimeUpdated = true;
+    }
+
+    if (rotateActive && activeEditController == pointerController && rotateDeltaSeconds > 0.0) {
+        OverlaySettings updated = SettingsSnapshot().overlay;
+        updated.yawDegrees +=
+            static_cast<double>(rotateInput) *
+            kEditYawAxisSensitivityDegreesPerSecond *
+            rotateDeltaSeconds;
+        ApplyRuntimeOverlaySettings(updated);
+        runtimeUpdated = true;
+    }
+
+    if (runtimeUpdated) {
+        AttachToHand();
+    }
+
+    if (commit) {
+        CommitRuntimeOverlaySettings();
+    }
 }
 
 bool VrOverlay::HandleOverlayClick(float x, float y, bool, uint64_t, uint32_t)
@@ -1798,6 +2564,19 @@ bool VrOverlay::HandleOverlayClick(float x, float y, bool, uint64_t, uint32_t)
         }
         if (PtInRectPixels(HideAngleSliderRect(), x, y)) {
             return ApplyHideAngleDegrees(HideAngleFromSliderX(x));
+        }
+        if (PtInRectPixels(SettingsEditPositionRect(), x, y)) {
+            return SetOverlayPage(OverlayPanelPage::PositionEdit);
+        }
+        return false;
+    }
+
+    if (page == OverlayPanelPage::PositionEdit) {
+        if (PtInRectPixels(SettingsBackButtonRect(), x, y)) {
+            return SetOverlayPage(OverlayPanelPage::Settings);
+        }
+        if (PtInRectPixels(ResetPositionRect(), x, y)) {
+            return ResetOverlayPosition();
         }
         return false;
     }

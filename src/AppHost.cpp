@@ -65,10 +65,14 @@ bool SettingsEqual(const Settings& a, const Settings& b)
     return std::tie(a.version, a.language,
                a.obs.host, a.obs.port, a.obs.password, a.obsConfigured,
                a.overlay.hand, a.overlay.placement, a.overlay.hideAngleDegrees,
+               a.overlay.offsetX, a.overlay.offsetY, a.overlay.offsetZ, a.overlay.scale,
+               a.overlay.yawDegrees,
                a.advanced.logLevel, a.advanced.closeToTray)
         == std::tie(b.version, b.language,
                b.obs.host, b.obs.port, b.obs.password, b.obsConfigured,
                b.overlay.hand, b.overlay.placement, b.overlay.hideAngleDegrees,
+               b.overlay.offsetX, b.overlay.offsetY, b.overlay.offsetZ, b.overlay.scale,
+               b.overlay.yawDegrees,
                b.advanced.logLevel, b.advanced.closeToTray);
 }
 
@@ -245,6 +249,10 @@ std::filesystem::path AppHost::ExportSupportReport()
                     << L"Overlay hand: " << ToDisplayString(settings.overlay.hand) << L"\n"
                     << L"Overlay placement: " << ToDisplayString(settings.overlay.placement) << L"\n"
                     << L"Hide angle degrees: " << settings.overlay.hideAngleDegrees << L"\n"
+                    << L"Overlay offset: " << settings.overlay.offsetX << L", "
+                    << settings.overlay.offsetY << L", " << settings.overlay.offsetZ << L"\n"
+                    << L"Overlay scale: " << settings.overlay.scale << L"\n"
+                    << L"Overlay yaw degrees: " << settings.overlay.yawDegrees << L"\n"
                     << L"Close to tray: " << BoolEnabled(settings.advanced.closeToTray) << L"\n";
 
     std::wstringstream log;

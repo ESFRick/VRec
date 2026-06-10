@@ -116,6 +116,7 @@
     <RuntimeAsset Include="..\assets\bindings_vive_controller.json" />
     <RuntimeAsset Include="..\assets\bindings_vive_cosmos_controller.json" />
     <RuntimeAsset Include="..\assets\bindings_hpmotioncontroller.json" />
+    <RuntimeAsset Include="..\assets\back_arrow.ico" />
   </ItemGroup>
   <ItemGroup>
     <WebAsset Include="$(ProjectDir)..\web\**\*.*" />

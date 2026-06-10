@@ -33,6 +33,16 @@
       "type": "boolean"
     },
     {
+      "name": "/actions/vrec/in/grip",
+      "requirement": "optional",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/vrec/in/scale_axis",
+      "requirement": "optional",
+      "type": "vector2"
+    },
+    {
       "name": "/actions/vrec/out/haptic",
       "type": "vibration"
     }
@@ -49,14 +59,18 @@
       "/actions/vrec": "VRec",
       "/actions/vrec/in/pointer_pose": "Pointer pose",
       "/actions/vrec/in/click": "Click REC/STOP",
-      "/actions/vrec/out/haptic": "Click haptic"
+      "/actions/vrec/out/haptic": "Click haptic",
+      "/actions/vrec/in/grip": "Position grip",
+      "/actions/vrec/in/scale_axis": "Position scale/rotate stick"
     },
     {
       "language_tag": "ru_ru",
       "/actions/vrec": "VRec",
       "/actions/vrec/in/pointer_pose": "Поза указателя",
       "/actions/vrec/in/click": "Нажатие REC/STOP",
-      "/actions/vrec/out/haptic": "Отклик на нажатие"
+      "/actions/vrec/out/haptic": "Отклик на нажатие",
+      "/actions/vrec/in/grip": "Grip для позиции",
+      "/actions/vrec/in/scale_axis": "Стик масштаба/поворота позиции"
     }
   ]
 }

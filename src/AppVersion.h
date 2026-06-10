@@ -2,7 +2,7 @@
 
 #include <string>
 
-inline constexpr const wchar_t* kAppVersion = L"1.0.0";
+inline constexpr const wchar_t* kAppVersion = L"1.1.0";
 
 inline constexpr const wchar_t* AppBuildTypeLabel()
 {

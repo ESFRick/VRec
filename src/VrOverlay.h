@@ -5,6 +5,8 @@
 #include "OverlayRenderer.h"
 #include "OverlayVisualState.h"
 
+#include <openvr.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -56,6 +58,22 @@ private:
     bool HandleOverlayClick(float x, float y, bool steamVrInput, uint64_t inputSource, uint32_t controller);
     bool SetOverlayPage(OverlayPanelPage page);
     bool ApplyHideAngleDegrees(int value);
+    bool ResetOverlayPosition();
+    void ApplyRuntimeOverlaySettings(const OverlaySettings& overlay);
+    void CommitRuntimeOverlaySettings();
+    void UpdatePositionEditInteraction(
+        uint32_t pointerController,
+        bool pointerHitsPanel,
+        OverlayHotspot hoverHotspot,
+        bool gripOverrideKnown,
+        bool gripOverrideDown,
+        bool scaleAxisKnown,
+        float scaleAxisX,
+        float scaleAxisY,
+        bool pointerRayKnown,
+        vr::HmdVector3_t pointerRaySource,
+        vr::HmdVector3_t pointerRayDirection);
+    void StopPositionEditDrag(bool commit);
     void HideCursorOverlay();
     void LogInputErrorOnce(const wchar_t* action, int error);
     void RenderOverlay(const StatusSnapshot& status);
@@ -93,6 +111,8 @@ private:
     uint64_t actionSetHandle_ = 0;
     uint64_t pointerPoseAction_ = 0;
     uint64_t clickAction_ = 0;
+    uint64_t gripAction_ = 0;
+    uint64_t scaleAxisAction_ = 0;
     uint64_t hapticAction_ = 0;
     uint64_t leftHandSource_ = 0;
     uint64_t rightHandSource_ = 0;
@@ -110,6 +130,11 @@ private:
     Hand lastPointerPolicyHand_ = Hand::Right;
     Hand lastAttachedHand_ = Hand::Right;
     OverlayPlacement lastAttachedPlacement_ = OverlayPlacement::WristOutside;
+    double lastAttachedOffsetX_ = 0.0;
+    double lastAttachedOffsetY_ = 0.0;
+    double lastAttachedOffsetZ_ = 0.0;
+    double lastAttachedScale_ = kPositionScaleDefault;
+    double lastAttachedYawDegrees_ = kPositionYawDefaultDegrees;
     OverlayRefreshState refreshState_;
     bool overlayImageFailureLogged_ = false;
     bool cursorVisible_ = false;
@@ -120,6 +145,22 @@ private:
     OverlayHotspot pressedHotspot_ = OverlayHotspot::None;
     bool hideByAngleVisible_ = true;
     OverlayPanelPage overlayPage_ = OverlayPanelPage::Recording;
+    bool positionDragActive_ = false;
+    bool positionScaleActive_ = false;
+    bool positionRotateActive_ = false;
+    bool lastEditGripDown_ = false;
+    bool lastEditScaleAxisActive_ = false;
+    bool lastEditRotateAxisActive_ = false;
+    uint32_t editController_ = 0xFFFFFFFFu;
+    OverlaySettings editStartOverlay_{};
+    vr::HmdVector3_t editStartPointerPosition_{};
+    vr::HmdVector3_t editStartAttachedPosition_{};
+    bool editStartDragPlaneValid_ = false;
+    vr::HmdVector3_t editStartDragPlanePoint_{};
+    vr::HmdVector3_t editStartDragPlaneNormal_{};
+    vr::HmdVector3_t editStartPointerHitPosition_{};
+    std::chrono::steady_clock::time_point lastEditScaleAxisAt_{};
+    std::chrono::steady_clock::time_point lastEditRotateAxisAt_{};
     bool mainOverlayFadeActive_ = false;
     bool mainOverlayFadeHideWhenDone_ = false;
     float mainOverlayAlpha_ = 1.0f;

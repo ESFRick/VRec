@@ -14,10 +14,11 @@ $appExe = Join-Path $root "bin\$Platform\$Configuration\vrec.exe"
 $smokeExe = Join-Path $root "bin\$Platform\$Configuration\tests\settings_smoke.exe"
 $distRoot = Join-Path $root "dist"
 $distDir = Join-Path $distRoot "VRec"
-$archivePath = Join-Path $distRoot "VRec-1.0.0-win-x64.zip"
+$archivePath = Join-Path $distRoot "VRec-1.1.0-win-x64.zip"
 $assetsDir = Join-Path $root "assets"
 $openVrDll = Join-Path $root "third_party\openvr_sdk\bin\win64\openvr_api.dll"
 $sourceIcon = Join-Path $assetsDir "app.ico"
+$sourceBackArrow = Join-Path $assetsDir "back_arrow.ico"
 
 function Write-Step {
     param([string]$Text)
@@ -187,7 +188,8 @@ function Check-Repository {
 function Package-Dist {
     Assert-FileExists $appExe "Application executable"
     Assert-FileExists $openVrDll "OpenVR runtime DLL"
-    Assert-FileExists (Join-Path $assetsDir "app.ico") "App icon"
+    Assert-FileExists $sourceIcon "App icon"
+    Assert-FileExists $sourceBackArrow "Back arrow icon"
     Assert-FileExists (Join-Path $assetsDir "app.vrmanifest") "OpenVR manifest"
     Assert-FileExists (Join-Path $assetsDir "actions.json") "OpenVR action manifest"
 
@@ -220,7 +222,8 @@ function Package-Dist {
     Copy-Item -LiteralPath $appExe -Destination $distDir -Force
     Copy-Item -LiteralPath $openVrDll -Destination $distDir -Force
     Copy-Item -LiteralPath $webSrc -Destination $distDir -Recurse -Force
-    Copy-Item -LiteralPath (Join-Path $assetsDir "app.ico") -Destination $distDir -Force
+    Copy-Item -LiteralPath $sourceIcon -Destination $distDir -Force
+    Copy-Item -LiteralPath $sourceBackArrow -Destination $distDir -Force
     Copy-Item -LiteralPath (Join-Path $assetsDir "app.vrmanifest") -Destination $distDir -Force
     Copy-Item -LiteralPath (Join-Path $assetsDir "actions.json") -Destination $distDir -Force
     foreach ($file in $bindingFiles) {
@@ -241,7 +244,7 @@ function Package-Dist {
 function Check-DistContents {
     Assert-DirectoryExists $distDir "Dist directory"
 
-    foreach ($fileName in @("vrec.exe", "openvr_api.dll", "app.ico", "app.vrmanifest", "actions.json")) {
+    foreach ($fileName in @("vrec.exe", "openvr_api.dll", "app.ico", "app.vrmanifest", "actions.json", "back_arrow.ico")) {
         Assert-FileExists (Join-Path $distDir $fileName) "Dist file $fileName"
     }
 
@@ -253,6 +256,12 @@ function Check-DistContents {
     $distIconHash = (Get-FileHash -LiteralPath (Join-Path $distDir "app.ico") -Algorithm SHA256).Hash
     if ($sourceIconHash -ne $distIconHash) {
         throw "Packaged icon hash does not match assets\app.ico."
+    }
+
+    $sourceBackArrowHash = (Get-FileHash -LiteralPath $sourceBackArrow -Algorithm SHA256).Hash
+    $distBackArrowHash = (Get-FileHash -LiteralPath (Join-Path $distDir "back_arrow.ico") -Algorithm SHA256).Hash
+    if ($sourceBackArrowHash -ne $distBackArrowHash) {
+        throw "Packaged back arrow icon hash does not match assets\back_arrow.ico."
     }
 
     $bindingFiles = @(Get-ChildItem -LiteralPath $distDir -Filter "bindings_*.json" -File)
@@ -306,6 +315,7 @@ function Package-Archive {
             "app.ico",
             "app.vrmanifest",
             "actions.json",
+            "back_arrow.ico",
             "web/index.html",
             "web/app.js",
             "web/styles.css"

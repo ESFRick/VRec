@@ -107,7 +107,7 @@ bool WinHttpWebSocket::Connect(
     }
 
     handles_->session.reset(WinHttpOpen(
-        L"VRec/1.0.0",
+        L"VRec/1.1.0",
         WINHTTP_ACCESS_TYPE_NO_PROXY,
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,

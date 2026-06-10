@@ -15,6 +15,8 @@ struct OverlayVisualState {
     Language language = Language::English;
     OverlayPanelPage panelPage = OverlayPanelPage::Recording;
     int hideAngleDegrees = kOverlayHideAngleDefaultDegrees;
+    double positionScale = kPositionScaleDefault;
+    double positionYawDegrees = kPositionYawDefaultDegrees;
     OverlayHotspot hoverHotspot = OverlayHotspot::None;
     OverlayHotspot pressedHotspot = OverlayHotspot::None;
     bool debugChecker = false;
@@ -32,6 +34,8 @@ inline bool operator==(
                left.language,
                left.panelPage,
                left.hideAngleDegrees,
+               left.positionScale,
+               left.positionYawDegrees,
                left.hoverHotspot,
                left.pressedHotspot,
                left.debugChecker) ==
@@ -43,6 +47,8 @@ inline bool operator==(
                right.language,
                right.panelPage,
                right.hideAngleDegrees,
+               right.positionScale,
+               right.positionYawDegrees,
                right.hoverHotspot,
                right.pressedHotspot,
                right.debugChecker);
@@ -74,6 +80,8 @@ inline OverlayVisualState MakeOverlayVisualState(
         settings.language,
         panelPage,
         settings.overlay.hideAngleDegrees,
+        settings.overlay.scale,
+        settings.overlay.yawDegrees,
         hoverHotspot,
         pressedHotspot,
         debugChecker,
@@ -200,7 +208,9 @@ private:
                    desired.hoverHotspot,
                    desired.pressedHotspot,
                    desired.debugChecker) &&
-            displayed->hideAngleDegrees != desired.hideAngleDegrees;
+            displayed->hideAngleDegrees != desired.hideAngleDegrees &&
+            displayed->positionScale == desired.positionScale &&
+            displayed->positionYawDegrees == desired.positionYawDegrees;
     }
 
     std::optional<OverlayVisualState> desired_;

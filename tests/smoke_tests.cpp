@@ -9,6 +9,7 @@
 
 #include <Windows.h>
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -27,6 +28,11 @@ void Check(bool condition, const wchar_t* message)
     }
     std::wcerr << L"FAIL: " << message << L"\n";
     ++failures;
+}
+
+bool Near(double a, double b)
+{
+    return std::abs(a - b) < 0.000001;
 }
 
 std::string ReadFile(const std::filesystem::path& path)
@@ -79,6 +85,11 @@ void TestSettingsRoundTrip(const std::filesystem::path& path, Diagnostics& log)
     settings.overlay.hand = Hand::Left;
     settings.overlay.placement = OverlayPlacement::UnderController;
     settings.overlay.hideAngleDegrees = 95;
+    settings.overlay.offsetX = 0.05;
+    settings.overlay.offsetY = -0.04;
+    settings.overlay.offsetZ = 0.02;
+    settings.overlay.scale = 1.25;
+    settings.overlay.yawDegrees = 12.5;
     settings.advanced.logLevel = L"debug";
     settings.advanced.closeToTray = false;
 
@@ -94,6 +105,11 @@ void TestSettingsRoundTrip(const std::filesystem::path& path, Diagnostics& log)
     Check(loaded.overlay.hand == Hand::Left, L"overlay hand round-trips");
     Check(loaded.overlay.placement == OverlayPlacement::UnderController, L"overlay placement round-trips");
     Check(loaded.overlay.hideAngleDegrees == 95, L"hide angle round-trips");
+    Check(Near(loaded.overlay.offsetX, settings.overlay.offsetX), L"position X offset round-trips");
+    Check(Near(loaded.overlay.offsetY, settings.overlay.offsetY), L"position Y offset round-trips");
+    Check(Near(loaded.overlay.offsetZ, settings.overlay.offsetZ), L"position Z offset round-trips");
+    Check(Near(loaded.overlay.scale, settings.overlay.scale), L"position scale round-trips");
+    Check(Near(loaded.overlay.yawDegrees, settings.overlay.yawDegrees), L"position yaw round-trips");
     Check(loaded.advanced.logLevel == L"debug", L"log level round-trips");
     Check(!loaded.advanced.closeToTray, L"close-to-tray setting round-trips");
 
@@ -102,6 +118,9 @@ void TestSettingsRoundTrip(const std::filesystem::path& path, Diagnostics& log)
     Check(json.find("\"obsConfigured\": true") != std::string::npos, L"OBS opt-in is persisted");
     Check(json.find("\"closeToTray\": false") != std::string::npos, L"close-to-tray setting is persisted");
     Check(json.find("\"hideAngleDegrees\": 95") != std::string::npos, L"hide angle setting is persisted");
+    Check(json.find("\"positionOffsetX\": 0.05") != std::string::npos, L"position X offset is persisted");
+    Check(json.find("\"positionScale\": 1.25") != std::string::npos, L"position scale is persisted");
+    Check(json.find("\"positionYawDeg\": 12.5") != std::string::npos, L"position yaw is persisted");
     Check(json.find("minimizeToTray") == std::string::npos, L"removed minimize-to-tray setting is not persisted");
     Check(json.find("outputFolder") == std::string::npos, L"legacy output folder is not persisted");
     Check(json.find("autoLaunch") == std::string::npos, L"legacy auto-launch is not persisted");
@@ -139,6 +158,7 @@ void TestSettingsMigration(const std::filesystem::path& path, Diagnostics& log)
     Check(loaded.overlay.hand == Hand::Left, L"legacy hand is loaded");
     Check(loaded.overlay.placement == OverlayPlacement::UnderController, L"legacy placement is loaded");
     Check(loaded.overlay.hideAngleDegrees == kOverlayHideAngleMaxDegrees, L"legacy hide angle is clamped");
+    Check(Near(loaded.overlay.scale, kPositionScaleDefault), L"legacy overlay scale is ignored");
     Check(loaded.advanced.closeToTray, L"missing close-to-tray setting defaults on");
 
     Check(store.Save(loaded), L"migrated settings save succeeds");

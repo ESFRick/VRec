@@ -28,5 +28,8 @@
     <None Include="..\assets\app.vrmanifest">
       <Filter>Resources</Filter>
     </None>
+    <None Include="..\assets\back_arrow.ico">
+      <Filter>Resources</Filter>
+    </None>
   </ItemGroup>
 </Project>

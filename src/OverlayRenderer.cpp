@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
@@ -66,7 +67,22 @@ RECT HideAngleSliderRect()
 
 RECT HideAngleResetRect()
 {
-    return RECT{ 352, 192, 480, 230 };
+    return RECT{ 32, 192, 140, 230 };
+}
+
+RECT SettingsEditPositionRect()
+{
+    return RECT{ 152, 192, 480, 230 };
+}
+
+RECT EditPositionRect()
+{
+    return RECT{ 152, 192, 322, 230 };
+}
+
+RECT ResetPositionRect()
+{
+    return RECT{ 334, 192, 480, 230 };
 }
 
 enum class PanelState {
@@ -350,6 +366,18 @@ std::wstring FormatRecordingTime(std::chrono::seconds elapsed)
     return stream.str();
 }
 
+std::wstring FormatScalePercent(double scale)
+{
+    const int percent = static_cast<int>(std::round(scale * 100.0));
+    return std::to_wstring(percent) + L"%";
+}
+
+std::wstring FormatYawDegrees(double yawDegrees)
+{
+    const int degrees = static_cast<int>(std::round(yawDegrees));
+    return std::to_wstring(degrees) + L"°";
+}
+
 void ApplyHoverStyle(
     bool hovered,
     bool pressed,
@@ -405,6 +433,116 @@ void DrawIconButton(
             &glyphRect,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
+}
+
+std::wstring ExecutableDirectoryForAssets()
+{
+    std::vector<wchar_t> buffer(MAX_PATH);
+    DWORD size = 0;
+    for (;;) {
+        size = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (size == 0) {
+            return L".";
+        }
+        if (size < buffer.size() - 1) {
+            break;
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+
+    std::wstring path(buffer.data(), size);
+    const std::size_t slash = path.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) {
+        return L".";
+    }
+    return path.substr(0, slash);
+}
+
+HICON LoadBackArrowIcon()
+{
+    static HICON icon = []() -> HICON {
+        std::wstring path = ExecutableDirectoryForAssets();
+        if (!path.empty() && path.back() != L'\\' && path.back() != L'/') {
+            path += L"\\";
+        }
+        path += L"back_arrow.ico";
+        return reinterpret_cast<HICON>(LoadImageW(
+            nullptr,
+            path.c_str(),
+            IMAGE_ICON,
+            64,
+            64,
+            LR_LOADFROMFILE));
+    }();
+    return icon;
+}
+
+void DrawBackFallbackGlyph(HDC dc, const RECT& rect, COLORREF color)
+{
+    GdiObject font = MakeFont(-23, FW_NORMAL, L"Segoe MDL2 Assets");
+    if (!font) {
+        font = MakeFont(-23, FW_NORMAL, L"Segoe UI Symbol");
+    }
+    if (!font) {
+        return;
+    }
+
+    SelectObject(dc, font.get());
+    SetTextColor(dc, color);
+    RECT glyphRect = rect;
+    DrawTextW(
+        dc,
+        L"\xE72B",
+        -1,
+        &glyphRect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+void DrawBackButton(HDC dc, const RECT& rect, bool hovered, bool pressed)
+{
+    COLORREF fill = color::Panel;
+    COLORREF border = color::PanelEdge;
+    COLORREF arrow = color::TextMid;
+    int borderWidth = 1;
+    ApplyHoverStyle(hovered, pressed, fill, border, arrow, borderWidth);
+    DrawRoundedRect(dc, rect, 8, fill, border, borderWidth);
+
+    if (HICON icon = LoadBackArrowIcon()) {
+        const int width = rect.right - rect.left;
+        const int height = rect.bottom - rect.top;
+        const int iconSize = std::max(18, std::min(width, height) - 8);
+        const int x = rect.left + (width - iconSize) / 2;
+        const int y = rect.top + (height - iconSize) / 2;
+        DrawIconEx(dc, x, y, icon, iconSize, iconSize, 0, nullptr, DI_NORMAL);
+        return;
+    }
+
+    DrawBackFallbackGlyph(dc, rect, arrow);
+}
+
+void DrawTextButton(
+    HDC dc,
+    const RECT& rect,
+    HGDIOBJ font,
+    const wchar_t* label,
+    bool hovered,
+    bool pressed)
+{
+    COLORREF fill = color::Panel;
+    COLORREF border = color::PanelEdge;
+    COLORREF text = color::TextHigh;
+    int borderWidth = 1;
+    ApplyHoverStyle(hovered, pressed, fill, border, text, borderWidth);
+    DrawRoundedRect(dc, rect, 9, fill, border, borderWidth);
+    SelectObject(dc, font);
+    SetTextColor(dc, text);
+    RECT textRect = rect;
+    DrawTextW(
+        dc,
+        label,
+        -1,
+        &textRect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
 bool DrawRecordingPanel(
@@ -753,26 +891,11 @@ bool DrawSettingsPanel(
 
     SetBkMode(dc, TRANSPARENT);
 
-    const RECT back = SettingsBackButtonRect();
-    COLORREF backFill = color::Panel;
-    COLORREF backBorder = color::PanelEdge;
-    COLORREF backText = color::TextMid;
-    int backBorderWidth = 1;
-    ApplyHoverStyle(
+    DrawBackButton(
+        dc,
+        SettingsBackButtonRect(),
         hoverHotspot == OverlayHotspot::SettingsBack,
-        pressedHotspot == OverlayHotspot::SettingsBack,
-        backFill,
-        backBorder,
-        backText,
-        backBorderWidth);
-    DrawRoundedRect(dc, back, 8, backFill, backBorder, backBorderWidth);
-    GdiObject backPen(CreatePen(PS_SOLID, 2, backText));
-    DcSelection backPenSelection(dc, backPen.get());
-    MoveToEx(dc, back.left + 21, back.top + 10, nullptr);
-    LineTo(dc, back.left + 11, back.top + 17);
-    LineTo(dc, back.left + 21, back.top + 24);
-    MoveToEx(dc, back.left + 12, back.top + 17, nullptr);
-    LineTo(dc, back.right - 10, back.top + 17);
+        pressedHotspot == OverlayHotspot::SettingsBack);
 
     SelectObject(dc, titleFont.get());
     SetTextColor(dc, color::TextHigh);
@@ -804,6 +927,14 @@ bool DrawSettingsPanel(
         -1,
         &valueRect,
         DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+
+    DrawTextButton(
+        dc,
+        HideAngleResetRect(),
+        buttonFont.get(),
+        russian ? L"Сброс" : L"Reset",
+        hoverHotspot == OverlayHotspot::HideAngleReset,
+        pressedHotspot == OverlayHotspot::HideAngleReset);
 
     const RECT minus = HideAngleMinusRect();
     const RECT plus = HideAnglePlusRect();
@@ -851,28 +982,129 @@ bool DrawSettingsPanel(
             pressedHotspot == OverlayHotspot::HideAngleSlider ? 2 : 1);
     }
 
-    const RECT reset = HideAngleResetRect();
-    COLORREF resetFill = color::Panel;
-    COLORREF resetBorder = color::PanelEdge;
-    COLORREF resetTextColor = color::TextHigh;
-    int resetBorderWidth = 1;
-    ApplyHoverStyle(
-        hoverHotspot == OverlayHotspot::HideAngleReset,
-        pressedHotspot == OverlayHotspot::HideAngleReset,
-        resetFill,
-        resetBorder,
-        resetTextColor,
-        resetBorderWidth);
-    DrawRoundedRect(dc, reset, 9, resetFill, resetBorder, resetBorderWidth);
-    SelectObject(dc, buttonFont.get());
-    SetTextColor(dc, resetTextColor);
-    RECT resetText = reset;
+    DrawTextButton(
+        dc,
+        SettingsEditPositionRect(),
+        buttonFont.get(),
+        russian ? L"Позиция" : L"Edit position",
+        hoverHotspot == OverlayHotspot::EditPosition,
+        pressedHotspot == OverlayHotspot::EditPosition);
+
+    return true;
+}
+
+bool DrawPositionEditPanel(
+    HDC dc,
+    const Settings& settings,
+    OverlayHotspot hoverHotspot,
+    OverlayHotspot pressedHotspot,
+    Diagnostics* diagnostics)
+{
+    GdiObject titleFont = MakeFont(-21, FW_BOLD, L"Segoe UI");
+    GdiObject labelFont = MakeFont(-17, FW_SEMIBOLD, L"Segoe UI");
+    GdiObject valueFont = MakeFont(-29, FW_BOLD, L"Segoe UI");
+    GdiObject rotateFont = MakeFont(-20, FW_BOLD, L"Segoe UI");
+    GdiObject buttonFont = MakeFont(-18, FW_SEMIBOLD, L"Segoe UI");
+    if (!titleFont || !labelFont || !valueFont || !rotateFont || !buttonFont) {
+        if (diagnostics) {
+            diagnostics->LogWarning(L"Overlay position edit font creation failed");
+        }
+        return false;
+    }
+
+    const bool russian = settings.language == Language::Russian;
+    DrawRoundedRect(
+        dc,
+        RECT{0, 0, OverlayRenderer::Width, OverlayRenderer::Height},
+        18,
+        color::Panel,
+        color::Panel,
+        0);
+    {
+        DcSelection brushSelection(dc, GetStockObject(NULL_BRUSH));
+        GdiObject border(CreatePen(PS_SOLID, 1, color::PanelEdge));
+        DcSelection penSelection(dc, border.get());
+        RoundRect(
+            dc,
+            1,
+            1,
+            OverlayRenderer::Width - 1,
+            OverlayRenderer::Height - 1,
+            18,
+            18);
+    }
+
+    SetBkMode(dc, TRANSPARENT);
+    DrawBackButton(
+        dc,
+        SettingsBackButtonRect(),
+        hoverHotspot == OverlayHotspot::SettingsBack,
+        pressedHotspot == OverlayHotspot::SettingsBack);
+
+    SelectObject(dc, titleFont.get());
+    SetTextColor(dc, color::TextHigh);
+    RECT titleRect{ 66, 16, 390, 50 };
     DrawTextW(
         dc,
-        russian ? L"Сброс" : L"Reset",
+        russian ? L"Позиция" : L"Edit position",
         -1,
-        &resetText,
+        &titleRect,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    SelectObject(dc, labelFont.get());
+    SetTextColor(dc, color::TextMid);
+    RECT gripRect{ 32, 58, 480, 84 };
+    DrawTextW(
+        dc,
+        russian ? L"Движение: Grip" : L"Move: Grip",
+        -1,
+        &gripRect,
         DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT scaleHintRect{ 32, 84, 480, 110 };
+    DrawTextW(
+        dc,
+        russian ? L"Размер: стик вверх/вниз" : L"Scale: Stick up/down",
+        -1,
+        &scaleHintRect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    RECT rotateHintRect{ 32, 110, 480, 136 };
+    DrawTextW(
+        dc,
+        russian ? L"Поворот: стик влево/вправо" : L"Rotate: Stick left/right",
+        -1,
+        &rotateHintRect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    SelectObject(dc, valueFont.get());
+    SetTextColor(dc, color::Accent);
+    const std::wstring scaleText = FormatScalePercent(settings.overlay.scale);
+    RECT scaleRect{ 32, 138, 480, 170 };
+    DrawTextW(
+        dc,
+        scaleText.c_str(),
+        -1,
+        &scaleRect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    SelectObject(dc, rotateFont.get());
+    const std::wstring rotateText = std::wstring(russian ? L"Поворот " : L"Rotation ") + FormatYawDegrees(settings.overlay.yawDegrees);
+    RECT rotateRect{ 32, 166, 480, 190 };
+    DrawTextW(
+        dc,
+        rotateText.c_str(),
+        -1,
+        &rotateRect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    DrawTextButton(
+        dc,
+        ResetPositionRect(),
+        buttonFont.get(),
+        russian ? L"Сброс позиции" : L"Reset position",
+        hoverHotspot == OverlayHotspot::ResetPosition,
+        pressedHotspot == OverlayHotspot::ResetPosition);
 
     return true;
 }
@@ -888,6 +1120,14 @@ bool DrawPanel(
 {
     if (panelPage == OverlayPanelPage::Settings) {
         return DrawSettingsPanel(
+            dc,
+            settings,
+            hoverHotspot,
+            pressedHotspot,
+            diagnostics);
+    }
+    if (panelPage == OverlayPanelPage::PositionEdit) {
+        return DrawPositionEditPanel(
             dc,
             settings,
             hoverHotspot,
