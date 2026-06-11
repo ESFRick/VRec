@@ -69,6 +69,15 @@ contents.
 The corresponding vendor license files are stored next to each dependency in
 `third_party`.
 
+## Support
+
+VRec is a free open-source project. If it helped you, you can support development:
+
+- DonationAlerts: <https://www.donationalerts.com/r/esfrick>
+- Crypto:
+  - USDT TRC20: `TRsfmfg9KrvapABqwpjnLfr6oxhmDsn48z`
+  - TON: `UQCFKTLcOMgp_W27ny-fRxoyimyeCv-Uf6BTGa-LMERLWp_k`
+
 ## License
 
 VRec is released under the GNU General Public License v3.0. See [LICENSE](LICENSE).
